@@ -1,0 +1,103 @@
+Declare    
+@BranchID int,    
+@CompanyID int,    
+@YearId int,    
+@FromDate datetime,    
+@ToDate datetime,    
+@ItemtypeId int,    
+@ItemId int,    
+@SuppId int    
+ 
+--As    
+ 
+--Select @BranchID=5,@CompanyID=27,@YearId=8,@FromDate='2020-04-01 00:00:00',@ToDate='2022-12-22 --00:00:00',@ItemtypeId=0,@ItemId=0,@SuppId=0
+--select @BranchID=lCompId, @CompanyID=lCompId,@FromDate=GETDATE()-1,@ToDate=GETDATE()-1 from RFINYR
+Set @BranchID=4  
+Set @CompanyID=27
+Set @YearId=7
+Set @FromDate='2021-04-01 00:00:00'
+--Set @ToDate='GETDATE()-1'
+Set @ItemtypeId=0    
+Set @ItemId=0    
+Set @SuppId=0    
+BEGIN
+Select    
+---Header fields    
+--row_number() over (Order by PRHDR.sDocNo) as RowNumber,  
+PRHDR.sDocNo [GATE INWARD NO],    
+convert(varchar,convert(date,convert(varchar(8),PRHDR.dtDocDate)),103) [GATE INWARD DATE],    
+--convert(varchar(10),STPR.dtDate,103) As [PR Approval Date],
+ISNULL(datediff (day,convert(date,convert(varchar(8),PRHDR.dtDocDate)),convert(date,convert(varchar(8),POHDR.dtDocDate))),0) as [PO Lead Days],
+POHDR.sDocNo [PO NO],    
+convert(varchar,convert(date,convert(varchar(8),POHDR.dtDocDate)),103) [PO Date],    
+--convert(varchar(10),ST.dtDate,103) [PO Approval Date],    
+ISNULL(datediff (day,convert(date,convert(varchar(8),POHDR.dtDocDate)),convert(date,convert(varchar(8),GRNHDR.dtDocDate))),0) as [GRN Lead Days],
+GRNHDR.sDocNo [GRN NO],    
+convert(varchar,convert(date,convert(varchar(8),GRNHDR.dtDocDate)),103) [GRN Date],    
+--(select sValue from txncf where lid=GRNHDR.lid and sName='Challan No.' and lLine=0) [Supplier Challan No],    
+--(select sValue from txncf where lid=GRNHDR.lid and sName='Challan Date' and lLine=0) [Supplier Challan Date],    
+(select sValue from txncf where lid=GRNHDR.lid and sName='Invoice No.' and lLine=0) [Supplier Inv No],    
+(select sValue from txncf where lid=GRNHDR.lid and sName='Invoice Date' and lLine=0) [Supplier Inv Date],    
+SUPP.sCode as [Supplier Code - Billing],    
+SUPP.sName as [Supplier Name - Billing],    
+--detail fields    
+PRDET.lLine [PR Line No],    
+(Select sName from ITMTYP (nolock) where ITMTYP.lTypid=PRDET.lItmtyp) [PR Item Type],    
+(select sCode from ITMMST (nolock) where PRDET.lItmId=ITMMST.lId) [PR Item Code],    
+(select sName from ITMMST (nolock) where PRDET.lItmId=ITMMST.lId) [PR Item Name],    
+--PRDET.sNarr as [PR Item Narration],    
+(Select sCode from UNTMST (nolock) where UNTMST.lid=PRDET.lUntId2) [PR UOM],                          
+Convert(Decimal(18,3),PRDET.dQty2) as [PR Quantity],    
+convert(decimal(18,3),(select IsNull(Sum(PRSCL.dQty2),0) from txndet PRSCL where PRSCL.lLnkDocId=PRHDR.lId and PRSCL.lLnkLine=PRDET.lLine    
+and PRSCL.ltypid in (702))) [PR ShortClose Qty],    
+Convert(Decimal(18,3),PODET.dQty2) as [PO Quantity],    
+convert(decimal(18,3),(select IsNull(Sum(POSCL.dQty2),0) from txndet POSCL where POSCL.lLnkDocId=POHDR.lId and POSCL.lLnkLine=PODET.lLine    
+and POSCL.ltypid in (413,997,996))) [PO ShortClose Qty],    
+Convert(Decimal(18,3),GRNDET.dQty2) as [GRN Quantity],    
+(Convert(Decimal(18,3),PODET.dQty2) - Convert(Decimal(18,3),GRNDET.dQty2)    
+-convert(decimal(18,3),(select IsNull(Sum(POSCL.dQty2),0) from txndet POSCL where POSCL.lLnkDocId=POHDR.lId and POSCL.lLnkLine=PODET.lLine    
+and POSCL.ltypid in (400,509,520,524,750,751,752,753,754,755,756,757,758, 759,760,761,762,763,764,765,766,767,768,769,956)))) as [Pending with PO],    
+Convert(Decimal(18,2),(select IsNull(dRate,0) from TXNCHRG (nolock) where lid=POHDR.lid and sName='Rate' and lLine=PODET.lLine)) [PO Line Item Rate],    
+Convert(Decimal(18,2),(select IsNull(dValue,0) from TXNCHRG (nolock) where lid=POHDR.lid and sName='Total Tax Amount' and lLine=PODET.lLine)) [PO Line Total Tax Amount],    
+Convert(Decimal(18,2),( (select IsNull(dValue,0) from TXNCHRG (nolock) where lid=POHDR.lid and sName='Total Amount' and lLine=PODET.lLine)    
+-    
+(select IsNull(dValue,0) from TXNCHRG (nolock) where lid=POHDR.lid and sName='Total Tax Amount' and lLine=PODET.lLine))) [PO Line Basic Amount],    
+Convert(Decimal(18,2),(select IsNull(dValue,0) from TXNCHRG (nolock) where lid=POHDR.lid and sName='Total Amount' and lLine=PODET.lLine)) [PO Line Total Amount],    
+(select sCode from CURMST where lid=POHDR.lCurrId) [Currency],    
+--PODET.sNarr as [PO Item Narration],    
+hdinv.sDocNo as [Purchase Invoice NO], 
+convert(varchar,convert(date,convert(varchar(8),hdinv.dtDocDate)),103)  [Purchase Invoice Date],
+ISNULL(datediff (day,convert(date,convert(varchar(8),GRNHDR.dtDocDate)),convert(date,convert(varchar(8),hdinv.dtDocDate))),0) as [PI Lead Days],
+--0.00 as [Purchase Invoice Amount],    
+Convert(Decimal(18,2),(select IsNull(dValue,0) from TXNCHRG (nolock) where lid=hdinv.lid and sName='Total Amount' and lLine=dtinv.lLine)) [Purchase Invoice Amount],    
+(select sRemarks from USRMST (nolock) where USRMST.lId=PRHDR.lUsrAdd) [PR Created by],    
+--(select sName from DIMMST (nolock) where DIMMST.lid=PRHDR.ldeptid) [PR Department],
+(select sRemarks from USRMST (nolock) where USRMST.lId=POHDR.lUsrAdd) [PO Created by]
+from txnhdr PRHDR    
+inner join TXNDET (nolock) as PRDET on PRHDR.lId=PRDET.lId    
+left outer join TXNDET (nolock) as PODET on PRHDR.lid=PODET.llnkdocid and PODET.lLnkLine=PRDET.lLine    and PODET.LTYPID in (400,509,520,524,750,751,752,753,754,755,756,757,758, 759,760,761,762,763,764,765,766,767,768,769,956)
+left outer join txnhdr POHDR on POHDR.lid=PODET.lId and POHDR.LTYPID in (400,509,520,524,750,751,752,753,754,755,756,757,758, 759,760,761,762,763,764,765,766,767,768,769,956) and POHDR.bDel<>1 and PODET.lClosed <> -2
+left outer join BUSMST (nolock) as SUPP on POHDR.lAccId1=SUPP.lId    
+left outer join TXNDET (nolock) as GRNDET on PODET.lid=GRNDET.llnkdocid and GRNDET.lLnkLine=PODET.lLine   and GRNDET.LTYPID in (164,540,548,861,790,791,792,793,794,795,796,797,798,921,801,802,809,808,807,805,804,803,841,842,844,850,845,
+		851,852,932,868,867,854,853,932,958,528) 
+left outer join txnhdr GRNHDR on GRNHDR.lid=GRNDET.lId and GRNHDR.LTYPID in (164,540,548,861,790,791,792,793,794,795,796,797,798,921,801,802,809,808,807,805,804,803,841,842,844,850,845,
+		851,852,932,868,867,854,853,932,958,528)  and GRNHDR.bDel <> 1 and GRNDET.lClosed <> -2
+left outer join txndet as dtinv on GRNDET.lId = dtinv.lLnkDocId and GRNDET.lLine = dtinv.lLnkLine and dtinv.lTypId in (904, 905,906,407,861,994,862,863,864,865,866,343,806,930,931,921,922,923,907,1040,908,909,526,527,945,1074,946,824,832,825,826,827,856,957) and dtinv.bDel <> 1 and dtinv.lClosed <> -2
+left outer join TXNHDR as hdinv on dtinv.lId = hdinv.lId and hdinv.lTypId in (904, 905,906,407,861,994,862,863,864,865,866,343,806,930,931,921,922,923,907,1040,908,909,526,527,945,1074,946,824,832,825,826,827,856,957) and hdinv.bDel <> 1 and hdinv.lClosed <> -2
+left outer join TXNSTAT (nolock) ST On ST.lId = POHDR.lId and ST.sName = 'Approved'
+left outer join TXNSTAT (nolock) STPR On STPR.lId = PRHDR.lId and STPR.sName = 'Approved'
+Where    
+PRHDR.lTypId in (402,679,680,681,682,683,684,685,686,687,688,689)    
+
+and PRHDR.lcompid=@CompanyID    
+--and PRHDR.lFinYrId=@YearId    
+--and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), PRHDR.dtDocDate, 105), 23))    
+--between convert(date,@fromdate,101) and convert(date,@todate,101))   
+--and Case When PRHDR.ltypid <> 228 Then (select count(lUsrId) from txnstat where lid=PRHDR.lId and lStatusId=50 and lUsrId<>0) Else 1 End = 1 
+and (PRHDR.litmtyp=@itemtypeid or @itemtypeid=0)    
+and (POHDR.lAccId1=@SuppId or @SuppId=0)    
+and (PRDET.lItmId=@ItemId or @ItemId=0 )    
+and PRHDR.bDel <> 1  and PRDET.lClosed <> -2
+ 
+Order by PRHDR.sDocNo, PRDET.lLine
+ END

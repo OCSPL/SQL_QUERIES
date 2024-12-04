@@ -1,0 +1,22 @@
+SELECT           
+            DET.lLnkDocId AS lid,
+            HDR.lid AS BiProduct_lid,
+            HDR.sDocNo AS [BiProduct_Voucher_No],
+            CONVERT(varchar, CONVERT(date, CONVERT(varchar(8), HDR.dtDocDate)), 105) AS [BiProduct_Voucher_Date],
+            ITM.sCode AS [BiProduct_Item_Code],
+            ITM.sName AS [BiProduct_Item_Name],
+            DET.sValue1 AS [BiProduct_Batch_No],
+            DET.sValue6 AS [BiProduct_Purity],
+            DET.sValue7 AS [BiProduct_Recovery],
+            UOM.sCode AS [BiProduct_UOM],
+            CONVERT(Decimal(18,3), DET.dQty2) AS [BiProduct_Quantity],
+            CASE WHEN DET.dQty2 <> 0 THEN CONVERT(Decimal(18,3), DET.dstkval / DET.dQty2) ELSE 0 END AS [BiProduct_Rate],
+            CONVERT(Decimal(18,3), DET.dstkval) AS [BiProduct_Value]
+        FROM txnhdr HDR
+        INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+        INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
+        INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
+        INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
+        WHERE HDR.ltypid IN (599,893,912,915,928,929,1059,1060,1061,1062,1063,1064)           
+            AND HDR.lcompid = 27
+            AND hdr.bDel = 0

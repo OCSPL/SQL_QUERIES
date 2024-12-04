@@ -1,0 +1,64 @@
+WITH vView AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY h.lId) AS myRow, 
+        h.lTypId,
+        h.lId,
+        cc.lId AS lCClId,
+        MAX(cc.sName) AS CCName,
+        MAX(c.sName) AS COAName,
+        h.dtDocDate AS VchDate,
+        MAX(ac.sName) AS Particulars,
+        MAX(dt.sName) AS VchTyp,
+        h.sDocNo AS VchNo,
+        SUM(a.dAmtDr) AS dAmtDr,
+        SUM(a.dAmtCr) AS dAmtCr,
+        MAX(h.sNarr) AS sNarr
+    FROM 
+        TXNTyp AS dt
+    INNER JOIN 
+        TXNHDR AS h ON dt.lTypId = h.lTypId
+    INNER JOIN 
+        TXNACCSUB AS a ON h.lId = a.lId AND a.bDel = 0
+    INNER JOIN 
+        ACCMST AS ac ON a.lAccId = ac.lId  
+    INNER JOIN 
+        COAMST AS c ON ac.lCOAId = c.lId  
+    INNER JOIN 
+        DIMMST AS cc ON cc.lId = a.lDimId AND cc.cTyp IN ('C', 'P') 
+    WHERE  
+        dt.bCostCenter <> 0 
+        AND (a.lline = (CASE WHEN dt.bCostCenter < 0 THEN 0 ELSE -1 END) OR a.lline > (CASE WHEN dt.bCostCenter > 0 THEN 0 ELSE 999999 END))
+        AND h.bDel = 0 
+        AND h.lCompId IN (27) 
+        AND h.lClosed <= 0
+        AND a.cTyp = 'C'
+    GROUP BY 
+        h.lTypId,
+        h.lId,
+        cc.lId, 
+        h.dtDocDate,
+        h.sDocNo,
+        a.lAccId 
+) 
+SELECT  
+    myRow, 
+    lTypId, 
+    lId, 
+    lCClId,
+    CCName AS [Cost Center],
+    COAName AS [Group Name], 
+    CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), VchDate)), 105) AS [Date], 
+    Particulars, 
+    VchTyp AS [Voucher Type],  
+    VchNo AS [Voucher No], 
+    dAmtDr AS [Debit Amount], 
+    dAmtCr AS [Credit Amount], 
+    sNarr AS [Narration],
+    (SELECT ISNULL(MAX(myRow), 0) FROM vView) AS lRecordCount 
+FROM 
+    vView
+ORDER BY 
+    myRow,
+    lId,
+    lTypId;
+

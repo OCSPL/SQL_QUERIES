@@ -1,0 +1,47 @@
+--ALTER     Procedure [dbo].[USP_Capex_Location Stock Transfer CAPEX_Register]  
+DECLARE @FromDate datetime = '2022-04-01 00:00:00',
+        @ToDate datetime = Getdate()
+
+SELECT 
+    HDR.sDocNo AS [Location Transfer Capex No],  
+    CONVERT(varchar, CONVERT(date, CONVERT(varchar(8), HDR.dtDocDate)), 106) AS [Location Transfer Capex Date],
+    LOC1.sName AS [From Location],
+    c.sName AS [From Project],
+    LOC2.sName AS [To Location],
+    c1.sName AS [To Project],
+    DET.lLine AS [Line No],  
+    ITP.sName AS [Item Type],  
+    ITM.sCode AS [Item Code],  
+    ITM.sName AS [Item Name],  
+    DET.sNarr AS [Item Narration],  
+    DET.sValue1 AS [Batch No],  
+    UOM2.sCode AS UOM,  
+    CONVERT(Decimal(18, 3), DET.dQty2) AS [Transfer Quantity], 
+    CONVERT(Decimal(18, 3), DET.dStkVal * -1) AS [Issue Value],
+    hl.sDocNo AS [Receipt Doc No],
+    CONVERT(varchar, CONVERT(date, CONVERT(varchar(8), hl.dtDocDate)), 106) AS [Receipt Doc Date],
+    CONVERT(Decimal(18, 3), ISNULL(dl.dQty2, 0)) AS [Receipt Quantity],
+    CONVERT(Decimal(18, 3), ISNULL(dl.dStkVal, 0)) AS [Receipt Value] 
+FROM 
+    TXNHDR HDR
+    INNER JOIN TXNDET DET ON HDR.lid = DET.lId
+    LEFT JOIN TXNDET dl ON dl.lTypId = 782 AND DET.lId = dl.lLnkDocId AND DET.lLine = dl.lLnkLine
+    LEFT JOIN TXNHDR hl ON hl.lTypId = 782 AND dl.lId = hl.lId
+    INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId  
+    INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp  
+    INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId  
+    INNER JOIN UNTMST AS UOM2 ON DET.lUntId2 = UOM2.lId  
+    LEFT OUTER JOIN DIMMST LOC1 ON LOC1.lid = HDR.lLocId1
+    LEFT JOIN CMPNY c ON LOC1.lCompId = c.lId AND c.cTyp = 'A'
+    LEFT OUTER JOIN DIMMST LOC2 ON LOC2.lid = HDR.lLocId2
+    LEFT JOIN CMPNY c1 ON LOC2.lCompId = c1.lId AND c1.cTyp = 'A'
+WHERE
+    HDR.ltypid IN (781)
+    AND DET.bDel <> -2 
+    AND HDR.bDel <> 1  
+    AND DET.lClosed <> -2 
+    AND hdr.lClosed = 0
+    --AND CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), HDR.dtDocDate, 105), 23))   
+    --    BETWEEN CONVERT(date, @FromDate, 101) AND CONVERT(date, @ToDate, 101)
+ORDER BY 
+    HDR.sDocNo, DET.lLine;

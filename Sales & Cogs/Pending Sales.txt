@@ -1,0 +1,97 @@
+WITH vTxnDet1 AS (
+    SELECT DET.*
+    FROM TXNHDR HDR
+    INNER JOIN TXNDET DET ON HDR.lId = DET.lId
+    WHERE HDR.ltypid IN (396, 399, 473, 476)
+        AND HDR.bDel <> 1
+        AND HDR.lClosed <> -2
+        AND DET.cFlag = 'I'
+        AND HDR.lId NOT IN (SELECT lLnkDocId FROM TXNDET (NOLOCK) WHERE lTypId = 414)
+), 
+vTxnDet2 AS (
+    SELECT SUM(dd1.dQty2) AS dQty2, dd1.lItmId, dd1.lLnkDocId, dd1.lLnkLine
+    FROM TXNDET (NOLOCK) dd1
+    INNER JOIN TXNHDR h ON dd1.lId = h.lId
+    WHERE dd1.lTypId IN (409, 497, 498, 499, 500, 504, 650, 654, 824, 825, 826, 827, 828, 829, 939, 940, 593, 649, 897, 903)
+        AND dd1.lClosed <> -2
+    GROUP BY dd1.lItmId, dd1.lLnkDocId, dd1.lLnkLine, dd1.lId
+    UNION ALL
+    SELECT SUM(dd1.dQty2) AS dQty2, dd1.lItmId, d2.lLnkDocId, d2.lLnkLine
+    FROM TXNDET (NOLOCK) dd1
+    INNER JOIN TXNHDR h ON dd1.lId = h.lId
+    INNER JOIN TXNDET d1 ON dd1.lLnkDocId = d1.lId AND dd1.lLnkLine = d1.lLine AND d1.lTypId = 652
+    INNER JOIN TXNDET d2 ON d1.lLnkDocId = d2.lId AND d1.lLnkLine = d2.lLine AND d2.lTypId = 651
+    WHERE dd1.lTypId IN (940) AND dd1.lClosed <> -2
+    GROUP BY dd1.lItmId, d2.lLnkDocId, d2.lLnkLine, dd1.lId
+), 
+vTxnDet3 AS (
+    SELECT d.lId, d.lLine, (d.dQty2) AS q1, SUM(ISNULL(d1.dQty2, 0)) AS q2
+    FROM vTxnDet1 d
+    LEFT JOIN vTxnDet2 d1 ON d.lId = d1.lLnkDocId AND d.lLine = d1.lLnkLine AND d.lItmId = d1.lItmId
+    GROUP BY d.lId, d.lLine, d.dQty2
+    HAVING ((d.dQty2) - SUM(ISNULL(d1.dQty2, 0))) > 0
+), 
+vCf AS (
+    SELECT d.lLnkDocId, d.lLnkLine, MAX(cf.sValue) AS sValue
+    FROM TXNDET d
+    INNER JOIN TXNCF cf ON d.lId = cf.lId AND d.lLine = cf.lLine AND cf.lFieldNo = 17
+    WHERE d.lTypId = 1050 AND d.bDel = 0 AND d.lClosed >= 0 AND NOT (cf.sValue = '')
+    GROUP BY d.lLnkDocId, d.lLnkLine
+) 
+SELECT 
+    ROW_NUMBER() OVER (ORDER BY HDR.sDocNo) AS RowNumber,
+    CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate)), 106) AS [Sales Order Date],
+    HDR.sDocNo AS [Sales Order No],
+    CUST.sName AS [Customer Name - Billing],
+    (SELECT MAX(sValue) FROM TXNCF (NOLOCK) WHERE lid = HDR.lid AND sName = 'Customer PO No.' AND lLine = 0) AS [Customer PO No.],
+    (SELECT MAX(sValue) FROM TXNCF (NOLOCK) WHERE lid = HDR.lid AND sName = 'Customer PO Date' AND lLine = 0) AS [Customer PO Date],
+    ITP.sName AS [Item Type],
+    ITM.sName AS [Item Name],
+    (SELECT CONVERT(DECIMAL(18, 2), dRate) FROM TXNCHRG (NOLOCK) WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) AS [Line Item Rate],
+    (SELECT CONVERT(DECIMAL(18, 2), dValue) FROM TXNCHRG (NOLOCK) WHERE lid = HDR.lid AND sName = 'Net' AND lLine = DET.lLine) AS [Line Total Amount],
+    (SELECT CONVERT(DECIMAL(18, 2), dFCRate) FROM TXNCHRG (NOLOCK) WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) AS [FC Rate],
+    (SELECT CONVERT(DECIMAL(18, 2), dFCRate * DET.dQty2) FROM TXNCHRG (NOLOCK) WHERE lid = HDR.lid AND sName = 'Net' AND lLine = DET.lLine) AS [FC Amount],
+    CONVERT(DECIMAL(18, 3), DET.dQty2) AS [SO Quantity],
+    CONVERT(DECIMAL(30, 3), dd1.dQty2) AS [Invoice Qty],
+    CONVERT(DECIMAL(21, 3), ISNULL(DET.dQty2, 0) - ISNULL(dd1.dQty2, 0)) AS [Balance Qty],
+    UOM.sCode AS UOM1,
+    CONVERT(DECIMAL(18, 2), (SELECT CONVERT(DECIMAL(18, 2), dRate) FROM TXNCHRG (NOLOCK) WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) * (DET.dQty2 - dd1.dQty2)) AS [Balance Amount],
+    CASE WHEN ISNULL(cmp.lCurrId, 0) = ISNULL(HDR.lCurrId, 0) THEN '' ELSE cur.sCode END AS [Foreign Currency],
+    CASE WHEN ISNULL(cmp.lCurrId, 0) = ISNULL(HDR.lCurrId, 0) THEN 0 ELSE ((DET.dQty2 - dd1.dQty2) * (SELECT dFCRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Net' AND lLine = DET.lLine)) END AS [Balance Total Amount (Foreign Cur)],
+    ISNULL(vCf.sValue, cf.sValue) AS [Delivery Date]
+FROM TXNHDR HDR
+INNER JOIN CMPNY cmp ON HDR.lCompId = cmp.lId
+INNER JOIN CURMST AS CUR ON CUR.lid = HDR.lCurrId
+INNER JOIN TXNDET (NOLOCK) AS DET ON HDR.lId = DET.lId
+LEFT JOIN TXNCF cf ON DET.lId = cf.lId AND DET.lLine = cf.lLine AND cf.sName IN ('PO ETD', 'Delivery Date') AND NOT cf.sValue = ''
+LEFT JOIN vCf ON DET.lId = vCf.lLnkDocId AND DET.lLine = vCf.lLnkLine
+INNER JOIN vTxnDet3 vd3 ON DET.lId = vd3.lId AND DET.lLine = vd3.lLine
+INNER JOIN ITMMST (NOLOCK) AS ITM ON DET.lItmId = ITM.lId
+INNER JOIN ITMTYP (NOLOCK) AS ITP ON ITP.lTypid = DET.lItmtyp
+INNER JOIN UNTMST (NOLOCK) AS UOM ON DET.lUntId = UOM.lId
+LEFT JOIN BUSMST (NOLOCK) AS CUST ON HDR.lAccId1 = CUST.lId
+LEFT JOIN (
+    SELECT SUM(dd1.dQty2) AS dQty2, dd1.lItmId, dd1.lLnkDocId, dd1.lLnkLine
+    FROM TXNDET (NOLOCK) dd1
+    INNER JOIN TXNHDR h ON dd1.lId = h.lId
+    WHERE dd1.lTypId IN (409, 497, 498, 499, 500, 504, 650, 654, 824, 825, 826, 827, 828, 829, 939, 940, 593, 649, 897, 903)
+        AND dd1.lClosed = 0 AND h.lClosed = 0 AND h.bDel = 0 AND dd1.bDel = 0
+    GROUP BY dd1.lItmId, dd1.lLnkDocId, dd1.lLnkLine
+    UNION ALL
+    SELECT SUM(dd1.dQty2) AS dQty2, dd1.lItmId, d2.lLnkDocId, d2.lLnkLine
+    FROM TXNDET (NOLOCK) dd1
+    INNER JOIN TXNHDR h ON dd1.lId = h.lId
+    INNER JOIN TXNDET d1 ON dd1.lLnkDocId = d1.lId AND dd1.lLnkLine = d1.lLine AND d1.lTypId = 652
+    INNER JOIN TXNDET d2 ON d1.lLnkDocId = d2.lId AND d1.lLnkLine = d2.lLine AND d2.lTypId = 651
+    WHERE dd1.lTypId IN (940) AND dd1.lClosed = 0 AND h.lClosed = 0 AND h.bDel = 0 AND dd1.bDel = 0
+    GROUP BY dd1.lItmId, d2.lLnkDocId, d2.lLnkLine
+) AS dd1 ON dd1.lItmId = DET.lItmId AND dd1.lLnkDocId = DET.lId AND dd1.lLnkLine = DET.lLine
+WHERE HDR.ltypid IN (396, 399, 473, 476)
+    AND DET.bDel <> -2
+    AND HDR.bDel <> 1
+    AND DET.lClosed <> -2
+    AND HDR.lClosed = 0
+    AND DET.cFlag = 'I'
+    AND (ISNULL(DET.dQty2, 0) - ISNULL(dd1.dQty2, 0)) > 0
+    AND HDR.lId NOT IN (SELECT lLnkDocId FROM TXNDET (NOLOCK) WHERE lTypId = 414)
+ORDER BY HDR.sDocNo, DET.lLine;

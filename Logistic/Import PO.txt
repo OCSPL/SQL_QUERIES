@@ -1,0 +1,63 @@
+Declare
+
+@FromDate datetime,
+@ToDate datetime
+
+
+
+Set @FromDate='2015-12-01 00:00:00'
+Set @ToDate=GETDATE()
+
+    select
+	row_number() over (Order by HDR.sDocNo) as RowNumber,
+	CMPY.sName as [Branch Name],
+	  DET.lLine [Line No],
+		ITM.sName as [Item Name] ,
+    SUPP.sName as [Suppllier Name],
+	DET.dQty as [Quantity],
+	  UOM.sCode as UOM,
+
+    
+    ---Header Custom Fields
+    (select sValue from txncf where lid=HDR.lid and sName='Purchase Order No' and lLine=0) [Purchase Order Number],
+    (select sValue from txncf where lid=HDR.lid and sName='Purchase Order Date' and lLine=0) [Purchase Order Date],
+    (select sValue from txncf where lid=HDR.lid and sName='Bank Details' and lLine=0) [Bank Details],
+    --(select sValue from txncf where lid=HDR.lid and sName='Purpose Of Requisition' and lLine=0) [Purpose Of Requisition],
+   
+    ----detail fields
+    DET.lLine [Line No],
+    --DET.sNarr as [Item Narration],
+    --HSN.sName [HSN Code]
+ --   ----Detail custom field
+ --   (select dRate from TXNCHRG (nolock) where lid=HDR.lid and sName='Rate' and lLine=DET.lLine) [Rate],
+	--(select dValue from TXNCHRG (nolock) where lid=HDR.lid and sName='Rate' and lLine=DET.lLine) [Amount],
+	--(select sValue from txncf where lid=HDR.lid and sName='Required By Date' and lLine=DET.lLine) [Required By Date],
+    (select sValue from txncf where lid=HDR.lid and sName='Revised ETA Date' and lLine=DET.lLine) [Revised ETA Date],
+	(select sValue from txncf where lid=DET.lid and sName='POL ETD' and lLine=DET.lLine) [POL ETD],
+	(select sValue from txncf where lid=DET.lid and sName='BL Date' and lLine=DET.lLine) [BL Date],
+	(select sValue from txncf where lid=DET.lid and sName='Invoice No' and lLine=DET.lLine) [Invoice No],
+	(select sValue from txncf where lid=DET.lid and sName='Bill of Entry Submission Date' and lLine=DET.lLine) [Bill of Entry Submission Date],
+	(select sValue from txncf where lid=DET.lid and sName='Bill of Entry No' and lLine=DET.lLine) [Bill of Entry No],
+	(select sValue from txncf where lid=DET.lid and sName='Invoice Date' and lLine=DET.lLine) [Invoice Date],
+	(select sValue from txncf where lid=HDR.lid and sName='BL Number' and lLine=DET.lLine) [BL Number],
+	(select sValue from txncf where lid=DET.lid and sName='Status' and lLine=DET.lLine) [Status],
+			(select sValue from txncf where lid=DET.lid and sName='Import Payment Due date' and lLine=DET.lLine) [Import Payment Due date	],
+			p.sname as [PayTerm],
+			(p.dValue) as [Payterm Value]
+
+
+ from txnhdr HDR
+     left join  BUSMST (nolock) as SUPP on HDR.lAccId1=SUPP.lId
+     inner join TXNDET (nolock) as DET on HDR.lId=DET.lId
+     inner join ITMMST (nolock) as ITM on DET.lItmId=ITM.lId
+    inner join ITMTYP (nolock) as ITP on ITP.lTypid=DET.lItmtyp
+     inner join UNTMST (nolock) as UOM on DET.lUntId=UOM.lId
+     inner join UNTMST (nolock) as UOM2 on DET.lUntId2=UOM2.lId
+    left outer join HSNMST (nolock) as HSN on HSN.lid=DET.lHSNid
+	left join CMPNY (nolock) as CMPY  on CMPY.lid=hdr.lCompId
+	left join PAYTRM (nolock) as p  on p.lid=hdr.lPayTrmId
+	where
+    HDR.ltypid in (279)
+ and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), HDR.dtDocDate, 105), 23)) 
+    between convert(date,@fromdate,101) and convert(date,@todate,101))
+and HDR.lClosed>=0 and HDR.bDel=0 and DET.bDel=0 and DET.lClosed>=0

@@ -1,0 +1,48 @@
+with vTxnHdr as (
+    select lTypId, lId, lAccId1, lPrjId, sDocNo, dtDocDate 
+    from TXNHDR hdr
+    where lTypId in (947, 953, 524) and HDR.bDel <> 1 and hdr.lClosed=0
+),
+vTxnDet as (
+    select d.lId,d.lItmTyp, d.lLine, d.dtDocDate, d.lItmId, d.dQty2 
+    from vTxnHdr h 
+    inner join TXNDET d on h.lId = d.lId
+	where d.bDel <> -2 and d.lClosed <> -2
+),
+vCharg as (
+    select c.lId, c.lLine, max(c.dAmtOn) as dAmtOn, sum(c.dValue) as dValue 
+    from vTxnDet d 
+    inner join TXNCHRG c on d.lId = c.lId and d.lLine = c.lLine and c.lChrgCatId in (100100,100200,100300) 
+    group by c.lId, c.lLine
+),
+FinalData as (
+    select 
+        d.lId, 
+        d.lLine, 
+        row_number() over (partition by d.lId, d.lLine order by d.dtDocDate, d.lId, d.lLine) as myRow,
+        row_number() over (order by d.dtDocDate, d.lId, d.lLine) as SrNo,
+        dt.sName as [Transaction Type],
+        h.sDocNo as [Work Order No.],
+        format(CONVERT(DATE, CONVERT(VARCHAR(8), d.dtDocDate)), 'dd-MMM-yyyy') as [Work Order Date],
+        bus.sName as [Party Name],
+        itt.sName as [Item Type], -- corrected alias for item type
+        i.sName as [Item Name],
+        CONVERT(DECIMAL(18, 4), ISNULL((cg.dAmtOn / d.dQty2), 0)) as [Rate],
+        CONVERT(DECIMAL(18, 4), ISNULL(cg.dAmtOn, 0)) as [Amount],
+        CONVERT(DECIMAL(18, 4), ISNULL(cg.dValue, 0)) as [GST],
+        CONVERT(DECIMAL(18, 4), ISNULL(cg.dAmtOn, 0) + ISNULL(cg.dValue, 0)) as [Total Work Order],
+        pj.sname as [Project Name]
+    from vTxnHdr h
+    inner join TXNTYP dt on h.lTypId = dt.lTypId
+    inner join vTxnDet d on h.lId = d.lId 
+    inner join ITMMST i on d.lItmId = i.lId
+    inner join ITMTYP itt on d.lItmTyp = itt.lTypId --
+    inner join vCharg cg on d.lId = cg.lId and d.lLine = cg.lLine
+    inner join BUSMST bus on h.lAccId1 = bus.lId
+    inner join CMPNY Pj on h.lPrjId = pj.lId
+)
+
+select * 
+from FinalData 
+where myRow = 1 
+order by 1;

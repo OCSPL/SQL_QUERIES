@@ -1,0 +1,176 @@
+Declare
+
+@BranchID int,
+
+@CompanyID int,
+
+@FromDate datetime,
+
+@ToDate datetime,
+
+@ItemtypeId int,
+
+@ItemId int,
+
+@SuppId int,
+
+@lUsrId int
+
+--As
+
+select @BranchID=27,@CompanyID=27,@FromDate='2022-04-01 00:00:00',@ToDate=getdate(),@ItemtypeId=0,@ItemId=0,@SuppId=0,@lUsrId=128
+
+Set @BranchID=27
+
+Set @CompanyID=27
+
+Set @FromDate='2022-11-01 00:00:00'
+
+--Set @ToDate='2025-11-28 00:00:00'
+
+Set @ItemtypeId=0
+
+Set @ItemId=0
+
+Set @SuppId=0
+
+select * into #itmTyp from ITMTYP where 1=2;
+
+if (Exists(Select 1 from USRROL as ur inner join ROLDET as rd on ur.lRoleId=rd.lId and rd.cTyp='M'
+
+and rd.lTaskId=120 and rd.lMode>=0 and ur.lCompId=@BranchId and ur.lId=@lUsrId) )
+
+       insert into #itmTyp
+
+       select distinct it.* 
+
+        from USRROL r
+
+        inner join ROLDET rd on r.lRoleId=rd.lId and rd.lTaskId=120 and lMode>=0 and rd.cTyp='M'
+
+       inner join ITMTYP as it on rd.lTypId=it.lTypId and it.bDel=0
+
+       where r.lCompId=@BranchId and r.lId=@lUsrId
+
+else
+
+       insert into #itmTyp
+
+       select * from ITMTYP
+
+
+select
+
+---Header fields
+
+--row_number() over (Order by RGP_ISSUEHDR.sDocNo) as RowNumber,
+
+t.sname as [Transcation Type of issue No],
+
+RGP_ISSUEHDR.sDocNo [RGP_ISSUE NO],
+
+convert(varchar,convert(date,convert(varchar(8),RGP_ISSUEHDR.dtDocDate)),103) [RGP_ISSUE Date],
+
+t2.sname as [Transcation Type of Grn],
+
+GRNHDR.sDocNo [GRN NO],
+
+convert(varchar,convert(date,convert(varchar(8),GRNHDR.dtDocDate)),103) [GRN Date],
+
+--(select sValue from txncf where lid=GRNHDR.lid and sName='Challan No.' and lLine=0) [Supplier Inv No],
+
+--(select sValue from txncf where lid=GRNHDR.lid and sName='Challan Date' and lLine=0) [Supplier Inv Date],
+
+(select sValue from txncf where lid=GRNHDR.lid and sName='Reference No.' and lLine=0) [Reference No.],
+
+(select sValue from txncf where lid=GRNHDR.lid and sName='Reference Date' and lLine=0) [Reference Date],
+
+--(select sValue from txncf where lid=GRNHDR.lid and sName='LR No' and lLine=0) [LR No],
+
+--(select sValue from txncf where lid=GRNHDR.lid and sName='LR Date' and lLine=0) [LR Date],
+
+(select sValue from txncf where lid=GRNHDR.lid and sName='Transaction Reference No' and lLine=0) [Transaction Reference No],
+
+(select sValue from txncf where lid=GRNHDR.lid and sName='Transaction Reference Date' and lLine=0) [Transaction Reference Date],
+
+TRANS.sName as [Transporter Name],
+
+SUPP.sCode as [Supplier Code - Billing],
+
+SUPP.sName as [Supplier Name - Billing],
+
+----detail fields
+
+RGP_ISSUEDET.lLine [RGP Requisition Line No],
+
+(Select sName from ITMTYP where ITMTYP.lTypid=RGP_ISSUEDET.lItmtyp) [RGP Requisition Item Type],
+
+(select sCode from ITMMST where RGP_ISSUEDET.lItmId=ITMMST.lId) [RGP Requisition Item Code],
+
+(select sName from ITMMST where RGP_ISSUEDET.lItmId=ITMMST.lId) [RGP Requisition Item Name],
+
+RGP_ISSUEDET.sNarr as [RGP Requisition Item Narration],
+
+RGP_ISSUEDET.svalue5 as [AR No.],
+
+RGP_ISSUEDET.svalue1 as [Batch No],
+
+(Select sCode from UNTMST where UNTMST.lid=RGP_ISSUEDET.lUntId) [RGP Requisition UOM],
+
+Convert(Decimal(18,3),RGP_ISSUEDET.dQty2) as [RGP_ISSUE Quantity],
+
+Convert(Decimal(18,3),GRNDET.dQty2) as [RGP GRN Quantity],
+
+Convert(Decimal(18,3),ISNULL(RGP_ISSUEDET.dQty2,0)-ISNULL(GRNDET.dQty2,0)) as [Balance Qty],
+
+cf.sValue as [Required by Date],
+
+--Convert(Decimal(18,3),IsNull(RGP_ISSUEDET.dQty2,0)-IsNull(GRNDET.dQty2,0)) [Balance At Vendor],
+
+RGP_ISSUEDET.sNarr as [RGP_ISSUE Item Narration]
+
+--Convert(Decimal(18,3),IsNull((select sValue from txncf where lid=RGP_ISSUEHDR.lid and sName='Weight in KG' and lLine=RGP_ISSUEDET.lLine),0)) [Weight in KG],
+
+--Convert(Decimal(18,3),IsNull((select sValue from txncf where lid=RGP_ISSUEHDR.lid and sName='Weight in KG Receipt' and lLine=RGP_ISSUEDET.lLine),0)) [Weight in KG Receipt]
+
+--(Convert(Decimal(18,3),(select IsNull(sValue,0) from txncf where lid=RGP_ISSUEHDR.lid and sName='Weight in KG' and lLine=RGP_ISSUEDET.lLine))
+
+--     -Convert(Decimal(18,3),(select IsNull(sValue,0) from txncf where lid=RGP_ISSUEHDR.lid and sName='Weight in KG Receipt' and lLine=RGP_ISSUEDET.lLine))) [Difference in Weight in]
+
+from txnhdr RGP_ISSUEHDR
+
+inner join TXNDET as RGP_ISSUEDET on RGP_ISSUEHDR.lid=RGP_ISSUEDET.lId
+
+left outer join BUSMST as SUPP on RGP_ISSUEHDR.lAccId1=SUPP.lId
+
+left outer join BUSMST as TRANS on RGP_ISSUEHDR.lAccId5=TRANS.lId
+
+left outer join TXNDET as GRNDET on RGP_ISSUEDET.lid=GRNDET.llnkdocid and GRNDET.lLnkLine=RGP_ISSUEDET.lLine and GRNDET.lTypId in (540,850)
+
+left join txntyp t on t.lTypId=RGP_ISSUEHDR.lTypId
+
+left outer join txnhdr GRNHDR on GRNHDR.lid=GRNDET.lId and GRNHDR.lTypId in (540,850)
+
+left join txntyp t2 on t2.lTypId=GRNHDR.lTypId
+
+left join txncf cf on cf.lid=RGP_ISSUEDET.lId and cf.lLine=RGP_ISSUEDET.lLine and cf.lFieldNo=1
+
+Where
+
+RGP_ISSUEHDR.LTYPID in (533,848)
+
+and RGP_ISSUEHDR.lcompid=@CompanyID
+
+and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), RGP_ISSUEHDR.dtDocDate, 105), 23))
+
+between convert(date,@fromdate,101) and convert(date,@todate,101))
+
+and (RGP_ISSUEHDR.litmtyp=@itemtypeid or @itemtypeid=0)
+
+and (RGP_ISSUEHDR.lAccId1=@SuppId or @SuppId=0)
+
+and (RGP_ISSUEDET.lItmId=@ItemId or @ItemId=0 )
+
+Order by RGP_ISSUEHDR.sDocNo, RGP_ISSUEDET.lLine
+
+drop table #itmTyp

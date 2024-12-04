@@ -1,0 +1,191 @@
+DECLARE
+
+    @BranchId INT,
+
+    @FromDate DATETIME,
+
+    @ToDate DATETIME,
+
+    @YearId INT,
+
+    @PartyID INT,
+
+    @itemtypeid INT,
+
+    @itemid INT
+
+ 
+
+BEGIN
+
+    SELECT
+
+        ROW_NUMBER() OVER (ORDER BY HDR.sDocNo) AS RowNumber,
+
+        ITP.sName AS [Item Type],
+
+        CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate)), 106) AS [Purchase Order Date],
+
+        HDR.sDocNo AS [Purchase Order No],
+
+        BUS.sName AS Supplier,
+
+        DET.lLine AS [Line No],
+
+        ITP.sName AS [Item Type],
+
+        icf.sValue AS [Inventory Category],
+
+        icf1.sValue AS [Inventory Sub Category],
+
+        ITM.sCode AS [Item Code],
+
+        ITM.sName AS [Item Name],
+
+        DET.sNarr AS [Item Narration],
+
+        CONVERT(DECIMAL(18, 3), DET.dQty2) AS [Purchase Order Quantity],
+
+        CONVERT(DECIMAL(18, 3), (SELECT ISNULL(SUM(PO.dQty2), 0)
+
+                                 FROM txndet PO
+
+                                 WHERE PO.lLnkDocId = HDR.lid
+
+                                 AND PO.lLnkLine = DET.lLine
+
+                                 AND PO.ltypid IN (164, 540, 548, 861, 790, 791, 792, 793, 794, 795, 796, 797, 798, 921, 801, 802, 809, 808, 807, 805, 804, 803, 841, 842, 844, 850, 845, 851, 852, 932, 868, 867, 854, 853, 932, 958, 528, 413, 997, 996))) AS [Processed Qty],
+
+        CONVERT(DECIMAL(18, 3), (DET.dQty2 - (SELECT ISNULL(SUM(PO.dQty2), 0)
+
+                                              FROM TXNDET PO
+
+                                              WHERE PO.lLnkDocId = HDR.lid
+
+                                              AND PO.lLnkLine = DET.lLine
+
+                                              AND PO.ltypid IN (164, 540, 548, 861, 790, 791, 792, 793, 794, 795, 796, 797, 798, 921, 801, 802, 809, 808, 807, 805, 804, 803, 841, 842, 844, 850, 845, 851, 852, 932, 868, 867, 854, 853, 932, 958, 528, 413, 997, 996)))) AS [Balance Qty],
+
+        UOM.sCode AS UOM1,
+
+        (SELECT sValue FROM txncf WHERE lid = HDR.lid AND sName = 'Required By Date' AND lLine = DET.lLine) AS [Required By Date],
+
+        (SELECT USR.sRemarks FROM txnstat STTS INNER JOIN USRMST USR ON USR.lid = STTS.lUsrId WHERE STTS.lid = HDR.lid AND STTS.sName = 'Prepared By' AND lLine = 0) AS [Prepared By Employee],
+
+        (SELECT sName FROM dimmst WHERE lid = HDR.lDeptId) AS [Department Name],
+
+        CONVERT(VARCHAR, CONVERT(DATE, LEFT(ST.dtDate, 11)), 106) AS [Approval Date],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) AS [Line Item Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) AS [Line Item Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Discount' AND lLine = DET.lLine) AS [Line Discount Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Discount' AND lLine = DET.lLine) AS [Line Discount Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Net' AND lLine = DET.lLine) AS [Line Net Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Net' AND lLine = DET.lLine) AS [Line Net Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Assesable Value' AND lLine = DET.lLine) AS [Line Assesable Value Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Assesable Value' AND lLine = DET.lLine) AS [Line Assesable Value Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'CGST' AND lLine = DET.lLine) AS [Line CGST Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'CGST' AND lLine = DET.lLine) AS [Line CGST Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'SGST' AND lLine = DET.lLine) AS [Line SGST Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'SGST' AND lLine = DET.lLine) AS [Line SGST Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST' AND lLine = DET.lLine) AS [Line IGST Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST' AND lLine = DET.lLine) AS [Line IGST Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Tax Amount' AND lLine = DET.lLine) AS [Line Total Tax Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Tax Amount' AND lLine = DET.lLine) AS [Line Total Tax Amount],
+
+        (SELECT dRate FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Amount' AND lLine = DET.lLine) AS [Line Total Rate],
+
+        (SELECT dValue FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Amount' AND lLine = DET.lLine) AS [Line Total Amount]
+
+    FROM
+
+        TXNHDR HDR
+
+    INNER JOIN
+
+        BUSMST AS BUS ON BUS.lId = HDR.lAccId1
+
+    INNER JOIN
+
+        TXNDET AS DET ON HDR.lId = DET.lId
+
+    INNER JOIN
+
+        ITMMST AS ITM ON DET.lItmId = ITM.lId
+
+    LEFT JOIN
+
+        itmcf AS icf ON DET.lItmId = icf.lId AND icf.sname = 'Inventory Category'
+
+    LEFT JOIN
+
+        itmcf AS icf1 ON DET.lItmId = icf1.lId AND icf1.sname = 'Inventory Sub Category'
+
+    INNER JOIN
+
+        ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
+
+    INNER JOIN
+
+        UNTMST AS UOM ON DET.lUntId2 = UOM.lId
+
+    LEFT OUTER JOIN
+
+        HSNMST AS HSN ON HSN.lid = DET.lHSNid
+
+    LEFT OUTER JOIN
+
+        TXNSTAT ST ON ST.lId = HDR.lId AND ST.sName = 'Approved By'
+
+    WHERE
+
+        HDR.ltypid IN (400, 509, 759, 769, 750, 760, 520, 751, 752, 753, 754, 755, 756, 757, 758, 761, 762, 763, 764, 765, 766, 767, 768, 956)
+
+        AND DET.bDel <> -2
+
+        AND HDR.bDel <> 1
+
+        AND DET.lClosed <> -2
+
+        AND CONVERT(DECIMAL(18, 3), (DET.dQty - (SELECT ISNULL(SUM(PO.dQty2), 0)
+
+                                                 FROM txndet PO
+
+                                                 WHERE PO.lLnkDocId = HDR.lid
+
+                                                 AND PO.lLnkLine = DET.lLine
+
+                                                 AND PO.ltypid IN (164, 540, 548, 861, 790, 791, 792, 793, 794, 795, 796, 797, 798, 921, 801, 802, 809, 808, 807, 805, 804, 803, 841, 842, 844, 850, 845, 851, 852, 932, 868, 867, 854, 853, 932, 958, 528, 413, 997, 996)))) > 0
+
+        AND CONVERT(DECIMAL(18, 3), (DET.dQty2 - (SELECT ISNULL(SUM(PO.dQty2), 0)
+
+                                                  FROM TXNDET PO
+
+                                                  WHERE PO.lLnkDocId = HDR.lid
+
+                                                  AND PO.lLnkLine = DET.lLine
+
+                                                  AND PO.ltypid IN (164, 540, 548, 861, 790, 791, 792, 793, 794, 795, 796, 797, 798, 921, 801, 802, 809, 808, 807, 805, 804, 803, 841, 842, 844, 850, 845, 851, 852, 932, 868, 867, 854, 853, 932, 958, 528, 413, 997, 996)))) > 0
+
+    ORDER BY
+
+        HDR.sDocNo,
+
+        DET.lLine
+
+END

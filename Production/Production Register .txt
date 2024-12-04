@@ -1,0 +1,421 @@
+Declare
+
+@CompanyID int,
+
+@FromDate datetime,
+
+@ToDate datetime
+
+--as
+
+ 
+
+ 
+
+set @CompanyID=27
+
+set @FromDate='01-Apr-2022'
+
+set @ToDate=GETDATE()
+
+ 
+
+BEGIN
+
+ 
+
+Create table #Temp_ProdEntryMaster (Id int identity(1,1),lid int)
+
+ 
+
+Create Table #Temp_ProdOutputTable
+
+    (Id int identity(1,1),
+
+        lid int,
+
+        Output_Voucher_No nvarchar(50),
+
+        Output_Voucher_Date nvarchar(50),
+
+        Output_Item_Code nvarchar(50),
+
+        Output_Item_Name nvarchar(500),
+
+                             Output_Item_Type nvarchar(500),
+
+                             FG_Name nvarchar(500),
+
+        Output_Batch_No nvarchar(50),
+
+        Output_Purity    nvarchar(50),
+
+        Output_Recovery    nvarchar(50),
+
+        Output_UOM nvarchar(50),
+
+        Output_Quantity    Decimal(18,3),
+
+        Output_Rate    Decimal(18,2),
+
+        Output_Value    Decimal(18,2),
+
+        BiProduct_lid int,
+
+                             --W_Output_Voucher_No nvarchar(50),
+
+        BiProduct_Voucher_No nvarchar(50),
+
+        BiProduct_Voucher_Date nvarchar(50),
+
+        BiProduct_Item_Code nvarchar(50),
+
+        BiProduct_Item_Name nvarchar(500),
+
+        BiProduct_Batch_No nvarchar(50),
+
+        BiProduct_Purity    nvarchar(50),
+
+        BiProduct_Recovery    nvarchar(50),
+
+        BiProduct_UOM nvarchar(50),
+
+        BiProduct_Quantity    Decimal(18,3),
+
+        BiProduct_Rate    Decimal(18,2),
+
+        BiProduct_Value    Decimal(18,2),
+
+        Consume_lid int,
+
+                             MyRow int,
+
+                             --C_Output_Voucher_No nvarchar(50),
+
+        Consume_Voucher_No nvarchar(50),
+
+        Consume_Voucher_Date nvarchar(50),
+
+        Consume_Item_Type nvarchar(50),
+
+                             Consume_Item_Code nvarchar(50),
+
+        Consume_Item_Name nvarchar(500),
+
+        Consume_Batch_No nvarchar(50),
+
+        Consume_UOM nvarchar(50),
+
+                             [Std_Qty] Decimal(30,2),
+
+        Consume_Quantity    Decimal(18,3),
+
+        Consume_Rate    Decimal(18,2),
+
+        Consume_Value    Decimal(18,2)
+
+ 
+
+        )
+
+    insert into  #Temp_ProdEntryMaster (lid)
+
+        Select
+
+            HDR.lid
+
+         from txnhdr HDR
+
+         where HDR.ltypid in (597,924,913,925,899,891)
+
+            and HDR.lcompid=@CompanyID
+
+            and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), HDR.dtDocDate, 106), 23))
+
+            between convert(date,@fromdate,101) and convert(date,@todate,101)) and hdr.bDel=0
+
+   
+
+    Declare @Cnt int
+
+    Declare @MaxCnt int
+
+    select @MaxCnt=Max(id) from #Temp_ProdEntryMaster
+
+    set @Cnt=1
+
+    WHile (@Cnt<=@MaxCnt)
+
+    Begin
+
+        ----production output section
+
+        insert into  #Temp_ProdOutputTable
+
+            (lid ,    Output_Voucher_No ,    Output_Voucher_Date ,Output_Item_Code ,    Output_Item_Name ,Output_Item_Type,FG_Name,Output_Batch_No ,
+
+            Output_Purity    ,Output_Recovery, Output_UOM ,    Output_Quantity    ,Output_Rate    ,Output_Value)                                      
+
+            Select
+
+                HDR.lid,
+
+                HDR.sDocNo  [Output_Voucher_No],
+
+                convert(varchar,convert(date,convert(varchar(8),HDR.dtDocDate)),106) [Output_Voucher_Date],
+
+                ITM.sCode as [Output_Item_Code],
+
+                ITM.sName as [Output_Item_Name],
+
+                                                          ITP.sName,
+
+                                                          ITMCF.svalue as [FG_Name],
+
+                DET. sValue1 [Output_Batch_No],
+
+                DET. sValue6 [Output_Purity],
+
+                DET. sValue7 [Output_Recovery],
+
+                UOM.sCode as [Output_UOM],
+
+                Convert(Decimal(18,3),DET.dQty2) [Output_Quantity],
+
+                                                          Case When DET.dQty2 <> 0 Then
+
+                Convert(Decimal(18,3),DET.dstkval/DET.dQty2)
+
+                                                          Else 0 End As [Output_Rate],
+
+                Convert(Decimal(18,3),DET.dstkval) [Output_Value]
+
+                                                          --(select cf.sValue from txncf cf where cf.lid=det.lId and cf.lLine=det.lLine and sname='Std Qty') as [Std_Qty]
+
+             from txnhdr HDR
+
+                inner join TXNDET as DET on HDR.lId=DET.lId and DET.cFlag='I'
+
+                inner join ITMMST as ITM on DET.lItmId=ITM.lId
+
+                                                          inner join ITMCF itmcf on det.lItmId=itmcf.lId and itmcf.lFieldNo=10 and itmcf.lLine=0
+
+                inner join ITMTYP as ITP on ITP.lTypid=DET.lItmtyp
+
+                inner join UNTMST as UOM on DET.lUntId=UOM.lId
+
+             where HDR.ltypid in(597,924,913,925,899,891)
+
+             and HDR.lid =(select lid from #Temp_ProdEntryMaster where id=@Cnt)
+
+            and HDR.lcompid=@CompanyID and hdr.bDel=0
+
+ 
+
+                                           declare @Output_Voucher_no varchar(500),@Output_Voucher_Date varchar(100),
+
+                                           @Output_Item_Code varchar(500),@Output_Item_Name varchar(500),@FG_Name varchar(500),@Output_Batch_NO varchar(500)
+
+                                           ,@Output_Qty decimal(21,3)
+
+                                           select @Output_Voucher_no =d.sDocNo,
+
+                             @Output_Voucher_Date=convert(varchar,convert(date,convert(varchar(8),d.dtDocDate)),105),
+
+                             @Output_Item_Code=itm.sCode,@Output_Item_Name=itm.sName,@FG_Name=ITMCF.sValue,@Output_Batch_NO=dd.sValue1
+
+                                           ,@Output_Qty=Convert(Decimal(18,3),dd.dQty2)
+
+                                           from TXNHDR d inner join TXNDET dd on d.lId=dd.lId and dd.cFlag='I'
+
+                                           inner join ITMMST as ITM on dd.lItmId=ITM.lId
+
+                                           inner join itmcf on dd.lItmId=itmcf.lId and itmcf.lFieldNo=10 and itmcf.lLine=0
+
+                                           where d.ltypid in(597,924,913,925,899,891) and d.lid=(select lid from #Temp_ProdEntryMaster where id=@Cnt)
+
+ 
+
+            ---for Bi-Product
+
+            insert into  #Temp_ProdOutputTable
+
+            (Output_Voucher_No,Output_Voucher_Date,Output_Item_Code ,Output_Quantity, Output_Item_Name ,FG_Name,Output_Batch_No,
+
+                                           --Output_Quantity,
+
+                                           lid
+
+                                           ,BiProduct_lid,    BiProduct_Voucher_No ,    BiProduct_Voucher_Date ,BiProduct_Item_Code , 
+
+                                           BiProduct_Item_Name ,BiProduct_Batch_No ,
+
+             BiProduct_Purity    ,BiProduct_Recovery,BiProduct_UOM , BiProduct_Quantity   
+
+                                            ,BiProduct_Rate,BiProduct_Value)
+
+            Select @Output_Voucher_No,@Output_Voucher_Date,@Output_Item_Code,@Output_Qty,@Output_Item_Name ,@FG_Name,@Output_Batch_No,
+
+                                           --@Output_Qty,
+
+                DET.lLnkDocId lid,
+
+                HDR.lid BiProduct_lid,
+
+                                                          --cf.sValue [W_Output_Voucher_No],
+
+                HDR.sDocNo  [BiProduct_Voucher_No],
+
+                convert(varchar,convert(date,convert(varchar(8),HDR.dtDocDate)),106) [BiProduct_Voucher_Date],
+
+                ITM.sCode as [BiProduct_Item_Code],
+
+                ITM.sName as [BiProduct_Item_Name] ,
+
+                DET. sValue1 [BiProduct_Batch_No],
+
+                DET. sValue6 [BiProduct_Purity],
+
+                DET. sValue7 [BiProduct_Recovery],
+
+                UOM.sCode as [BiProduct_UOM],
+
+                Convert(Decimal(18,3),DET.dQty2) [BiProduct_Quantity],
+
+                                                          Case When DET.dQty2 <> 0 Then
+
+                Convert(Decimal(18,3),(DET.dstkval)/DET.dQty2)
+
+                                                          Else 0 End As [BiProduct_Rate],
+
+                Convert(Decimal(18,3),DET.dstkval) [BiProduct_Value]
+
+             from txnhdr HDR
+
+                inner join TXNDET as DET on HDR.lId=DET.lId and DET.cFlag='I'
+
+                inner join ITMMST as ITM on DET.lItmId=ITM.lId
+
+                inner join ITMTYP as ITP on ITP.lTypid=DET.lItmtyp
+
+                inner join UNTMST as UOM on DET.lUntId=UOM.lId
+
+                                                          --left join txncf cf on cf.lid=hdr.lId and cf.lLine=0 and cf.cFldTyp='L'
+
+             where HDR.ltypid in(599,893,912,915,928,929,1059,1060,1061,1062,1063,1064)  
+
+             and DET.lLnkDocId =(select lid from #Temp_ProdEntryMaster where id=@Cnt)
+
+            and HDR.lcompid=@CompanyID and hdr.bDel=0
+
+ 
+
+            ----Consumption details against production entry
+
+            insert into  #Temp_ProdOutputTable
+
+            (Output_Voucher_No,Output_Voucher_Date,Output_Item_Code,Output_Quantity,Output_Item_Name ,FG_Name,Output_Batch_No,
+
+                                           --Output_Quantity,
+
+                                           lid ,Consume_lid,   Consume_Voucher_No ,    Consume_Voucher_Date ,Consume_Item_Type,Consume_Item_Code ,    Consume_Item_Name ,Consume_Batch_No ,
+
+             Consume_UOM ,Std_Qty,    Consume_Quantity    ,Consume_Rate    ,Consume_Value,MyRow)
+
+            Select @Output_Voucher_No,@Output_Voucher_Date,@Output_Item_Code,@Output_Qty,@Output_Item_Name,@FG_Name ,@Output_Batch_No,
+
+                                           --@Output_Qty,
+
+                DET.lLnkDocId lid,
+
+                HDR.lid Consume_lid,
+
+                                                          --cf1.sValue [C_Output_Voucher_No],
+
+                HDR.sDocNo  [Consume_Voucher_No],
+
+                convert(varchar,convert(date,convert(varchar(8),HDR.dtDocDate)),106) [Consume_Voucher_Date],
+
+                                                          itp.sName,
+
+                ITM.sCode as [Consume_Item_Code],
+
+                ITM.sName as [Consume_Item_Name] ,
+
+                DET. sValue1 [Consume_Batch_No],
+
+                UOM.sCode as [Consume_UOM],
+
+                                                          (select SUM(case when ISNUMERIC(c.sValue)=1 then CONVERT(decimal(30,2),c.sValue) else CONVERT(decimal(30,2),0.00) end) from TXNDET d
+
+                                                          inner join TXNCF c on d.lId=c.lId and d.lLine=c.lLine and c.lFieldNo=1 where d.lId=DET.llnkDocId and d.lLine=DET.lLnkLine and d.cFlag='B'),
+
+                Convert(Decimal(18,3),DET.dQty2) [Consume_Quantity],
+
+                                                          Case When DET.dQty2 <> 0 Then
+
+                Convert(Decimal(18,3),(DET.dstkval*-1)/DET.dQty2)
+
+                                                          Else 0 End As [Consume_Rate],
+
+                Convert(Decimal(18,3),DET.dstkval*-1) [Consume_Value]
+
+                                                          ,row_number() over (partition by HDR.lId,DET.lItmid order by  HDR.lId,DET.lItmid )
+
+             from txnhdr HDR
+
+                inner join TXNDET as DET on HDR.lId=DET.lId and DET.cFlag='I'
+
+                inner join ITMMST as ITM on DET.lItmId=ITM.lId
+
+                inner join ITMTYP as ITP on ITP.lTypid=DET.lItmtyp
+
+                inner join UNTMST as UOM on DET.lUntId=UOM.lId
+
+                                                                        --left join txncf cf1 on cf1.lid=hdr.lId and cf1.lLine=0 and cf1.cFldTyp='L'
+
+             where HDR.ltypid in(598,892,911,914,926,927) and DET.bDel <> -2 and HDR.bDel <> 1  and DET.lClosed <> -2 and hdr.lClosed=0
+
+             and DET.lLnkDocId =(select lid from #Temp_ProdEntryMaster where id=@Cnt)
+
+            and HDR.lcompid=@CompanyID and  hdr.bDel=0
+
+   
+
+        set @Cnt=@Cnt+1
+
+ 
+
+    End
+
+              --select d.Std_Qty,d.Consume_Quantity,x.Consume_Quantity,convert(decimal(30,3),(d.Std_Qty*d.Consume_Quantity)/case when x.Consume_Quantity=0 then 1 else x.Consume_Quantity end)
+
+              update d set Std_Qty=convert(decimal(30,3),(Std_Qty*d.Consume_Quantity)/case when x.Consume_Quantity=0 then 1 else x.Consume_Quantity end)
+
+              from #Temp_ProdOutputTable d
+
+              inner join (select Consume_lid,Consume_Item_Code,SUM(Consume_Quantity) as Consume_Quantity
+
+              from #Temp_ProdOutputTable group by Consume_lid,Consume_Item_Code) x on d.Consume_lid=x.Consume_lid and d.Consume_Item_Code=x.Consume_Item_Code
+
+              where d.Consume_lid>0 and d.Std_Qty>0 --and d.Consume_lid=20707
+
+              --update #Temp_ProdOutputTable set Std_Qty=0 where MyRow>1
+
+ 
+
+              alter table #Temp_ProdOutputTable drop column lId
+
+              alter table #Temp_ProdOutputTable drop column MyRow
+
+ 
+
+    select * from #Temp_ProdOutputTable order by id
+
+    drop table #Temp_ProdEntryMaster
+
+    drop table #Temp_ProdOutputTable
+
+   
+
+              END

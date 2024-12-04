@@ -1,0 +1,119 @@
+--ALTER Procedure [dbo].[USP_MP_Sales_COGS_Report]
+DECLARE
+@CompanyID INT,
+@YearId INT,
+@FromDate DATETIME,
+@ToDate DATETIME,
+@CustCode INT,
+@itemid INT;
+-- Set values for variables
+-- Set @CompanyID=27
+SET @YearId = 7
+SET @FromDate = '2022-04-01 00:00:00'
+SET @ToDate = GETDATE()
+SET @CUSTCode = 0 
+SET @itemid = 0
+BEGIN
+CREATE TABLE #tempCOGS
+(
+    pkid INT IDENTITY(1, 1) PRIMARY KEY,
+    [Transaction Name] VARCHAR(250),
+    SalesInvoiceId INT,
+    [Sales Invoice No] VARCHAR(200),
+    [Sales Invoice Date] VARCHAR(30),
+    [Customer Name] VARCHAR(500),
+    lLnkDocId INT,
+    lLnkLine INT,
+    lLine INT,
+    [Item Type] VARCHAR(200),
+    [Item Code] VARCHAR(250),
+    [Item Name] VARCHAR(500),
+    [Batch No.] VARCHAR(500),
+    [UOM] VARCHAR(100),
+    [Sales Quantity] DECIMAL(18, 2),
+    [Sales Rate] DECIMAL(18, 2),
+    [Sales Value] DECIMAL(18, 2),
+    [Material Rate] DECIMAL(18, 2),
+    [Material Value] DECIMAL(18, 2),
+    [Other Rate] DECIMAL(18, 2),
+    [Other Value] DECIMAL(18, 2),
+    [COGS Rate] DECIMAL(18, 2),
+    [COGS Value] DECIMAL(18, 2),
+    [GrossProfitPerKG] DECIMAL(18, 2) DEFAULT 0,
+    [Value] DECIMAL(18, 2) DEFAULT 0,
+    [Percent] DECIMAL(18, 2) DEFAULT 0
+)
+INSERT INTO #tempCOGS
+(
+    [Transaction Name], SalesInvoiceId, [Sales Invoice No], [Sales Invoice Date], [Customer Name], lLnkDocId, lLnkLine, lLine, [Item Type], [Item Code], [Item Name],
+    [Batch No.], [UOM], [Sales Quantity], [Sales Rate], [Sales Value], [Material Rate], [Material Value], [Other Rate], [Other Value], [COGS Rate], [COGS Value]
+)
+SELECT
+    dt.sname AS [Transaction Name],
+    d.lId,
+    d.sDocNo [Sales Invoice No],
+    CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), d.dtDocDate, 112)), 106) [Sales Invoice Date],
+    CUST.sName AS [Customer Name],
+    dd.lLnkDocId,
+    dd.lLnkLine,
+    dd.lLine,
+    ITP.sName AS [Item Type],
+    ITM.sCode AS [Item Code],
+    ITM.sName AS [Item Name],
+    dd.sValue1 AS [Batch No.],
+    UOM.sCode AS [UOM],
+    Case When d.ltypid not in ( 990,341,1079)  Then Convert(Decimal(18,2),dd.dQty2) Else Convert(Decimal(18,2),dd.dQty2) * (-1) End As [Quantity],
+	Case When d.ltypid not in ( 990,341,1079)  Then Convert(Decimal(18,2),dd.dRate) Else Convert(Decimal(18,2),dd.dRate) * (-1) End As SalesRate,
+	Case When d.ltypid not in ( 990,341,1079)  Then Convert(Decimal(18,2),dd.dQty2 * dd.dRate) Else Convert(Decimal(18,2),dd.dQty2 * (-1) * dd.dRate) End As [Sales Value],
+	--(Select Convert(Decimal(18,2),dRate) From TXNCHRG where lid=d.lid and sName='Line Value' and lLine=dd.lLine) As SalesRate,
+	--(Select Convert(Decimal(18,2),dValue) From TXNCHRG where lid=d.lid and sName='Line Value' and lLine=dd.lLine) As [Sales Value],
+	Convert(decimal(18,2), -(dd.dStkVal / dd.dQty2)) -(Convert(Decimal(18,2),dds.dRate3)-Convert(Decimal(18,2),dds.dRate)),
+	Convert(decimal(18,2), -(dd.dStkVal))-Convert(Decimal(18,2),dd.dQty2)*( Convert(Decimal(18,2),dds.dRate3)-Convert(Decimal(18,2),dds.dRate)),
+	Convert(Decimal(18,2),dds.dRate3)-Convert(Decimal(18,2),dds.dRate),
+	Convert(Decimal(18,2),dd.dQty2)*( Convert(Decimal(18,2),dds.dRate3)-Convert(Decimal(18,2),dds.dRate)) ,
+	Convert(decimal(18,2), -(dd.dStkVal / dd.dQty2)) As COGSRate,
+	Convert(decimal(18,2), -(dd.dStkVal)) As COGSValue
+FROM
+    TXNTYP AS dt
+    INNER JOIN TXNHDR d ON d.ltypid = dt.ltypid AND d.ltypid IN (341,990, 499, 504, 650, 654, 824, 825, 826, 827, 828, 829, 939, 940, 990, 1079)
+    INNER JOIN TXNDET dd ON d.lid = dd.lid AND dd.cFlag = 'I'
+    LEFT JOIN TXNDET dds ON dd.lStkId = dds.lid AND dd.lStkLine = dds.lLine
+    LEFT JOIN BUSMST CUST ON d.lAccId1 = CUST.lId
+    LEFT JOIN ITMMST ITM ON dd.lItmId = ITM.lId
+    LEFT JOIN ITMTYP ITP ON ITP.lTypid = dd.lItmtyp
+    LEFT JOIN UNTMST UOM ON dd.lUntId = UOM.lId
+    LEFT JOIN UNTMST UOM2 ON dd.lUntId2 = UOM2.lId
+    LEFT JOIN CURMST CUR ON CUR.lid = d.lCurrId
+    LEFT JOIN USRMST emp ON d.lEmpId = emp.lId
+WHERE
+    (CUST.lid = @CustCode OR @CustCode = 0)
+    AND (dd.lItmId = @ItemId OR @ItemId = 0)
+    AND d.lcompid IN (27, 9,28,25,26)--(93,40,26,7,25,28,9,27)
+    AND d.bDel = 0
+    AND (CONVERT(DATE, CONVERT(VARCHAR(10), CONVERT(VARCHAR(50), d.dtDocDate, 105), 23))
+    BETWEEN CONVERT(DATE, @FromDate, 101) AND CONVERT(DATE, @todate, 101));
+UPDATE #tempCOGS
+SET [COGS Rate] = CONVERT(DECIMAL(18, 2), -(dd.dStkVal / dd.dQty2)),
+    [COGS Value] = CONVERT(DECIMAL(18, 2), -(dd.dStkVal))
+FROM
+    TXNDET dd
+    INNER JOIN #tempCOGS d ON dd.lId = d.lLnkDocId AND d.lLnkLine = dd.lLine
+WHERE
+    dd.lTypId = 902
+    AND d.[Transaction Name] = 'Ex Bond Sales Invoice - Domestic';
+-- Updating GrossProfitPerKg which is the difference between Sales Rate and COGS Rate
+UPDATE #tempCOGS
+SET [GrossProfitPerKG] = [Sales Rate] - [COGS Rate];
+-- Updating Value which is the product of Sales Qty and GrossProfitPerKG
+UPDATE #tempCOGS
+SET [Value] = [Sales Quantity] * [GrossProfitPerKG];
+-- Calculating Percentage of value in COGSValue
+UPDATE #tempCOGS
+SET [Percent] = ([Value] / [Sales Value]) * 100;
+SELECT
+    [Transaction Name], [Sales Invoice No], [Sales Invoice Date], [Customer Name], [Item Type], [Item Code], [Item Name], [Batch No.],
+    [UOM], [Sales Quantity], [Sales Rate], [Sales Value], [Material Rate], [Material Value], [Other Rate], [Other Value], [COGS Rate], [COGS Value], [GrossProfitPerKG], [Value], [Percent]
+FROM
+    #tempCOGS;
+DROP TABLE #tempCOGS;
+END;

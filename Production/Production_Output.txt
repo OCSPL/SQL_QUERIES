@@ -1,0 +1,24 @@
+SELECT
+                HDR.lid,
+                HDR.sDocNo AS [Output_Voucher_No],
+                CONVERT(varchar, CONVERT(date, CONVERT(varchar(8), HDR.dtDocDate)), 105) AS [Output_Voucher_Date],
+                ITM.sCode AS [Output_Item_Code],
+                ITP.sName As [Output_Item_Type] ,
+                ITM.sName AS [Output_Item_Name],
+                ITMCF.svalue as [FG_Name],
+                DET.sValue1 AS [Output_Batch_No],
+                DET.sValue6 AS [Output_Purity],
+                DET.sValue7 AS [Output_Recovery],
+                UOM.sCode AS [Output_UOM],
+                CONVERT(Decimal(18,3), DET.dQty2) AS [Output_Quantity],
+                CASE WHEN DET.dQty2 <> 0 THEN CONVERT(Decimal(18,3), DET.dstkval / DET.dQty2) ELSE 0 END AS [Output_Rate],
+                CONVERT(Decimal(18,3), DET.dstkval) AS [Output_Value]
+            FROM txnhdr HDR
+            INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+            INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
+            INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
+            inner join ITMCF itmcf on det.lItmId=itmcf.lId and itmcf.lFieldNo=10 and itmcf.lLine=0
+            INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
+            WHERE HDR.ltypid IN (597,924,913,925,899,891)
+                AND HDR.lcompid = 27
+                AND hdr.bDel = 0

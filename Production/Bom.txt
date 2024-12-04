@@ -1,0 +1,63 @@
+ WITH CTE_BOMDetails AS (
+        SELECT 
+            ROW_NUMBER() OVER (ORDER BY det.lBomId, lSeqId) AS [Sr.No], 
+            TYP.sName AS [ItmType], 
+            MST.sName AS [ItemName],
+            mst.sCode AS [ItemCode], 
+            BOM.dQty AS [Quantity], 
+            BOM.dRate AS [Rate], 
+            BOM.sCode AS [BOMCode], 
+            BOM.sName AS [BOMName], 
+            TYP1.sName AS [Type],
+            MST1.sCode AS [BOMItemCode], 
+            MST1.sName AS [Name], 
+            CASE 
+                WHEN det.cFlag='P' THEN CAST(det.lUntId AS VARCHAR) 
+                ELSE u.sName 
+            END AS [Unit], 
+            BOM.cTyp AS [Based on], 
+            dPercentage AS [Percentage], 
+            CASE 
+                WHEN det.cFlag='P' THEN det.dQtyPrc 
+                ELSE det.dQty 
+            END AS [BOMQty], 
+            BOM.dCnv AS [BOMCnv], 
+            det.cFlag AS [cFlag], 
+            DSG.sCode AS [Resource Type],
+            CASE 
+                WHEN st.lFieldNo=1 THEN BOM.svalue1
+                WHEN st.lFieldNo=2 THEN BOM.svalue2
+                WHEN st.lFieldNo=3 THEN BOM.svalue3
+                WHEN st.lFieldNo=4 THEN BOM.svalue4
+                WHEN st.lFieldNo=5 THEN BOM.svalue5
+                WHEN st.lFieldNo=6 THEN BOM.svalue6
+                WHEN st.lFieldNo=7 THEN BOM.svalue7
+                WHEN st.lFieldNo=8 THEN BOM.svalue8
+                WHEN st.lFieldNo=9 THEN BOM.svalue9
+                WHEN st.lFieldNo=10 THEN BOM.svalue10 
+                ELSE '' 
+            END AS [Stock Parameter]
+        FROM 
+            ITMBOMDET det 
+        INNER JOIN 
+            ITMBOM BOM ON det.lBomId = BOM.lBomId
+        INNER JOIN 
+            ITMMST MST ON MST.lId = BOM.lId
+        INNER JOIN 
+            ITMTYP TYP ON TYP.lTypId = BOM.lTypId
+        LEFT JOIN 
+            ITMMST MST1 ON MST1.lId = det.lBomItm
+        LEFT JOIN 
+            ITMDET DT ON det.lBomItm = DT.lId
+        LEFT JOIN 
+            ITMTYP TYP1 ON TYP1.lTypId = DT.lTypId
+        LEFT JOIN 
+            UNTMST u ON det.lUntId = u.lId
+        LEFT OUTER JOIN 
+            DSGMST DSG ON DSG.lId = det.lResourceId
+        LEFT JOIN 
+            STKPRM st ON st.lTypId = TYP.lTypId AND st.bBOM = 1
+    )
+    SELECT * 
+    FROM CTE_BOMDetails
+    ORDER BY [Sr.No];

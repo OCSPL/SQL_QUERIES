@@ -1,0 +1,96 @@
+  DECLARE
+            @CompanyID int,
+            @FromDate datetime,
+            @ToDate datetime
+
+        SET @CompanyID = 27
+        SET @FromDate = '01-Jan-2020'
+        SET @ToDate = GETDATE()
+
+        ;WITH Con_CTE AS (
+            SELECT
+                HDR.lid AS Consume_lid,
+                HDR.sDocNo AS [Consume_Voucher_No],
+                CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate)), 105) AS [Consume_Voucher_Date],
+                itp.sName AS [Consume_Item_Type],
+                ITM.sCode AS [Consume_Item_Code],
+                ITM.sName AS [Consume_Item_Name],
+                DET.sValue1 AS [Consume_Batch_No],
+                UOM.sCode AS [Consume_UOM],
+                CONVERT(DECIMAL(18, 2), DET.dQty2) AS [Consume_Quantity],
+                CASE 
+                    WHEN DET.dQty2 <> 0 THEN CONVERT(DECIMAL(18, 3), (DET.dstkval * -1) / DET.dQty2) 
+                    ELSE 0 
+                END AS [Consume_Rate],
+                CONVERT(DECIMAL(18, 3), DET.dstkval * -1) AS [Consume_Value],
+                -- Removed ROW_NUMBER() as it adds overhead. If not required, it's better to omit it
+                prodEntryNo.sValue AS [Output Voucher Number],
+                prodEntryDate.sValue AS [Output Voucher Date],
+                batchNo.sValue AS [Output_Batch_No]
+
+            FROM txnhdr HDR
+            INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+            INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
+            INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
+            INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
+
+            -- Join txncf for fetching output voucher, date, and batch number instead of subqueries
+            LEFT JOIN txncf prodEntryNo ON HDR.lid = prodEntryNo.lId AND prodEntryNo.lLine = 0 AND prodEntryNo.sName LIKE '%Production Entry No%'
+            LEFT JOIN txncf prodEntryDate ON HDR.lid = prodEntryDate.lId AND prodEntryDate.lLine = 0 AND prodEntryDate.lFieldNo = 3
+            LEFT JOIN txncf batchNo ON HDR.lid = batchNo.lId AND batchNo.lLine = 0 AND batchNo.lFieldNo = 6
+
+            WHERE HDR.ltypid IN (598, 892, 911, 914, 926, 927) 
+            AND DET.bDel <> -2 
+            AND HDR.bDel <> 1 
+            AND DET.lClosed <> -2 
+            AND HDR.lClosed = 0
+            AND CONVERT(DATE, CONVERT(VARCHAR(10), CONVERT(VARCHAR(50), HDR.dtDocDate, 106), 23))
+                BETWEEN CONVERT(DATE, @FromDate, 101) 
+                AND CONVERT(DATE, @ToDate, 101)
+            AND HDR.lcompid = @CompanyID
+            AND HDR.bDel = 0
+        ),
+
+        -- CTE to select output item details
+        Oi_CTE AS (
+            SELECT 
+                h.sDocNo, 
+                m.sName AS [Output Item Name]
+            FROM TXNHDR h
+            LEFT JOIN TXNDET d ON h.lid = d.lid AND d.cflag = 'I'
+            LEFT JOIN ITMMST m ON d.lItmId = m.lId
+            WHERE h.ltypid IN (597, 891, 899, 913, 924, 925)
+        ),
+
+        -- CTE to select FG name details
+        FG_Name_CTE AS (
+            SELECT 
+                c.lId AS Consume_lid,
+                fg.sValue AS FG_Name_CON
+            FROM txncf c
+            LEFT JOIN ITMCF fg ON c.lValue = fg.lId AND fg.sname = 'FG Name'
+            WHERE c.lTypId IN (598, 892, 911, 914, 926)
+            AND c.sname = 'Product Name'
+        )
+
+        -- Final select combining all CTEs
+        SELECT 
+            fg.FG_Name_CON,
+            o.[Output Item Name], 
+            c.[Consume_Voucher_No],
+            c.[Consume_Voucher_Date],
+            c.[Consume_Item_Type],
+            c.[Consume_Item_Code],
+            c.[Consume_Item_Name],
+            c.[Consume_Batch_No],
+            c.[Consume_UOM],
+            c.[Consume_Quantity],
+            c.[Consume_Rate],
+            c.[Consume_Value],
+            c.[Output Voucher Number],
+            c.[Output Voucher Date],
+            c.[Output_Batch_No]
+        FROM Con_CTE c
+        LEFT JOIN Oi_CTE o ON c.[Output Voucher Number] = o.sDocNo
+        LEFT JOIN FG_Name_CTE fg ON c.Consume_lid = fg.Consume_lid
+        WHERE c.Consume_lid IS NOT NULL

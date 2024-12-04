@@ -1,0 +1,152 @@
+--USE [eresOCSPL_Test]
+
+--GO
+
+--/****** Object:  StoredProcedure [dbo].[USP_Quality_InwardQC_Summary_Register_Report]    Script Date: 13-08-2024 14:44:52 ******/
+
+--SET ANSI_NULLS ON
+
+--GO
+
+--SET QUOTED_IDENTIFIER ON
+
+--GO
+
+--ALTER   Procedure [dbo].[USP_Quality_InwardQC_Summary_Register_Report]
+
+Declare
+
+@CompanyID int,
+
+@YearId int,
+
+@FromDate datetime,
+
+@ToDate datetime,
+
+@SuppCode int,
+
+@ItemCode int
+
+--As
+
+--Set @CompanyID=4
+
+--Set @YearId=4
+
+--Set @FromDate='2019-12-01 00:00:00'
+
+--Set @ToDate='2020-12-31 00:00:00'
+
+--Set @SuppCode=0
+
+--Set @ItemCode=0
+
+
+ 
+
+select
+
+       HDR.sDocNo  [Inward QC No], 
+
+    convert(varchar,convert(date,convert(varchar(8),HDR.dtDocDate)),103) [Inward QC Date],
+
+       Case HDR.ltypid  
+
+         when        839    then   'Inward QC KEY RM'
+
+              when 840    then   'Inward QC RMPM'
+
+              when 977    then   'Inward QC Bulk'
+
+              when 454    then   'Inward QC (GRN QC)'
+
+              when 541    then   'Job Work Inward QC (JW)'
+
+              when 542    then   'Sales Return Inward QC'
+
+              when 586    then   'Jobwork Inward QC (CP)'
+
+      else 'NA' end [Inward QC Type],
+
+       SUPP.sName as [Supplier Name - Billing],
+
+       (select top 1 sValue from txncf where lid=HDR.lid and sName like '%Gate Entry No%' and lLine=0) [Gate Entry No],
+
+       (select top 1 sValue from txncf where lid=HDR.lid and sName='Gate Entry Date' and lLine=0) [Gate Entry Date],
+
+       (select sValue from txncf where lid=HDR.lid and sName='GRN No' and lLine=0) [GRN No],
+
+       (select sValue from txncf where lid=HDR.lid and sName='GRN Date' and lLine=0) [GRN Date],
+
+       (select sValue from txncf where lid=HDR.lid and sName='Invoice No.' and lLine=0) [Invoice No.],
+
+       DET.lLine [Line No], 
+
+    ITP.sName as [Item Type], 
+
+    ITM.sCode as [Item Code], 
+
+    ITM.sName as [Item Name] , 
+
+    DET.sNarr as [Item Narration], 
+
+    ----Detail custom field 
+
+     UOM2.sCode as UOM, 
+
+     Convert(Decimal(18,3),DET.dQty2) as [Analysis Qty] ,
+
+       case when HDR.lTypId=839 then  DET.sValue1
+
+        when HDR.lTypId=977 then (select sValue from txncf where lid=HDR.lid and sName='Batch No.' and lLine=DET.lLine)
+
+        else  (select sValue from txncf where lid=HDR.lid and sName='Batch No' and lLine=DET.lLine)
+
+        end [Batch No],
+
+       (select sValue from txncf where lid=HDR.lid and sName='AR No.' and lLine=DET.lLine) [AR No.],
+
+       (select sValue from txncf where lid=HDR.lid and sName='QC Status' and lLine=DET.lLine) [QC Status],
+
+       HDR.sNarr [Transaction Narration]
+
+from TXNHDR  HDR
+
+       inner join TXNDET DET on HDR.lid=DET.lId
+
+       inner join ITMMST as ITM on DET.lItmId=ITM.lId 
+
+     inner join ITMTYP as ITP on ITP.lTypid=DET.lItmtyp 
+
+     inner join UNTMST as UOM on DET.lUntId=UOM.lId 
+
+     inner join UNTMST as UOM2 on DET.lUntId2=UOM2.lId 
+
+        left join  BUSMST as SUPP on HDR.lAccId1=SUPP.lId
+
+where
+
+       HDR.ltypid in (839,840,977,454,541,542,586) and DET.bDel <> -2 and HDR.bDel <> 1  and DET.lClosed <> -2 and hdr.lClosed=0
+
+   -- and (SUPP.lid=@SuppCode or  @SuppCode=0)
+
+   -- and (I.lid=@ItemCode or @ItemCode=0)
+
+   -- and TH.lcompid=@CompanyID
+
+   -- and TH.lFinYrId=@YearId
+
+   --and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), TH.dtDocDate, 105), 23)) 
+
+   -- between convert(date,@fromdate,101) and convert(date,@todate,101))
+
+    ---condition commented as all POS to be shown, if cancelled po to be excluded than activate the condition
+
+    --and TH.lClosed<>0    
+
+    ---condition for checking of data for particular order, to be used when customer report issue for any order
+
+    --and TH.sDocNo='CG/IWQC/00026/19-20'
+
+--Order by [QC Report NO],[Detail Line No]

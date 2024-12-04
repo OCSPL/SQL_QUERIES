@@ -1,0 +1,164 @@
+
+Declare
+
+ 
+
+@CompanyID int,
+
+ 
+
+@FromDate datetime,
+
+ 
+
+@ToDate datetime
+
+ 
+
+--As
+
+ 
+
+select @CompanyID=27,@FromDate='2020-04-01 00:00:00',@ToDate= getdate()
+
+ 
+
+ 
+
+select distinct
+
+ 
+
+ty1.sname as [Transcation Name],
+
+b.sName as [Supplier Name - Billing Name],
+
+(select m.sname from (select * from txncf where lTypId in (840,839) and sname='Purchase Order No') c left join txnhdr h on c.lValue=h.lId
+
+left join busmst m on h.lAccId4=m.lId where c.lId=hdr.lId and c.lLine=0) as [Manufacturer Name],
+
+ 
+
+hdr.sDocNo as [Doc Number],
+
+ 
+
+    convert(varchar,convert(date,convert(varchar(8),hdr.dtDocDate)),105) [Doc Date],
+
+ 
+
+ity.sName as [Item Type],
+
+ 
+
+det.lLine as [Item Line],
+
+ 
+
+imst.sName as [Item Name],
+
+ 
+
+dQty as [Analysis Qty],
+
+ 
+
+(select sValue from TXNCF c where det.lId=c.lId and c.lLine = det.lLine and c.sName='QC Status') as [QC Status],
+
+ 
+
+--imst.lId,
+
+ 
+
+tic.sValue1 as [Specification Id],
+
+ 
+
+tic.sValue2 as [Standard],
+
+ 
+
+tic.sName as  [Item Specification Name],
+
+ 
+
+tic.sValue as [Spcefication Value],
+
+itc.sRemarks as [Default Value],
+
+CONVERT (decimal(18,2),tic.dMinVal) AS Minvalue,
+
+CONVERT (decimal(18,2),tic.dMaxVal) as Maxvalue
+
+ 
+
+ 
+
+from
+
+ 
+
+txntyp ty1
+
+ 
+
+left join txnhdr hdr on ty1.lTypId=hdr.lTypId
+
+ 
+
+left join TXNDET det  on hdr.lId=det.lId
+
+ 
+
+left join TXNITMCF tic  on tic.lId=det.lId
+
+ 
+
+left join itmtxncf itc on tic.lItmId=itc.lId and tic.lFieldNo=itc.lFieldNo
+
+ 
+
+left join ITMMST imst on imst.lId=det.lItmId
+
+ 
+
+left join  ITMTYP ity on ity.lTypId=det.lItmTyp
+
+ 
+
+left join txncf cf on det.lId=cf.lId and cf.sName='QC Status' and cf.lLine = det.lLine
+
+ 
+
+left join busmst b on hdr.lAccId1=b.lId
+
+ 
+
+ 
+
+ 
+
+where ty1.lTypId in (839,840) --and hdr.sDocNo='SSM2223INQCRMPM00931'
+
+ 
+
+and DET.bDel <> -2 and HDR.bDel <> 1  and DET.lClosed <> -2 and hdr.lClosed=0
+
+ 
+
+and hdr.lcompid=@CompanyID
+
+ 
+
+    and (CONVERT(date, CONVERT(VARCHAR(10), CONVERT(varchar(50), hdr.dtDocDate, 105), 23))
+
+ 
+
+        between convert(date,@fromdate,101) and convert(date,@todate,101))
+
+ 
+
+ 
+
+order by [Doc Number],[Item Line]

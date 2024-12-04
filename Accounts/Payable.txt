@@ -1,0 +1,463 @@
+DECLARE @decimal DECIMAL(21,18);
+
+ 
+
+SELECT @decimal = lDigDec
+
+FROM CMPNY c
+
+INNER JOIN CURMST cm ON c.lCurrId = cm.lid
+
+WHERE c.lId = 27;
+
+ 
+
+WITH vTxnHdr AS (
+
+    SELECT
+
+        d.lTypId, dt.sName, dt.lFinTyp, d.lId, d.lClosed, d.bDel,
+
+        d.dtDueDate, d.dtDocDate, d.dTotal, d.sPrefix, d.lDocNo, d.sExtNo, d.sDocNo, d.lCurrId, d.lPayTrmId, d.dCurrCnv,
+
+        (CASE WHEN dt.bEmpDet > 0 THEN da.lEmpId ELSE d.lEmpId END) AS lEmpId,
+
+        da.lLine, 0 AS lSubLine, da.lAccId, da.lAstId, d.lCompId, da.lPrjId, da.lDimId, d.sNarr AS sNarr1, da.sNarr, da.dAmtDr, da.dAmtCr, da.dOtstndAmt, da.dRate,
+
+        d.lLocId
+
+    FROM TXNTYP AS dt
+
+    INNER JOIN TXNHDR AS d ON dt.lTypId = d.lTypId AND dt.lFinTyp < 2 AND (dt.bComp = 0 AND dt.bPrjDet = 0 AND dt.bProfitCenter = 0)
+
+    INNER JOIN TXNACC AS da ON d.lId = da.lId
+
+    WHERE d.bDel = 0 AND da.bDel = 0
+
+ 
+
+    UNION ALL
+
+ 
+
+    SELECT
+
+        d.lTypId, dt.sName, dt.lFinTyp, d.lId, d.lClosed, d.bDel,
+
+        d.dtDueDate, d.dtDocDate, d.dTotal, d.sPrefix, d.lDocNo, d.sExtNo, d.sDocNo, d.lCurrId, d.lPayTrmId, d.dCurrCnv,
+
+        (CASE WHEN dt.bEmpDet > 0 THEN da.lEmpId ELSE d.lEmpId END) AS lEmpId,
+
+        ds.lLine, ds.lSubLine, da.lAccId, da.lAstId, ds.lCompId, ds.lPrjId, ds.lDimId, d.sNarr AS sNarr1, da.sNarr, ds.dAmtDr, ds.dAmtCr, ds.dOtstndAmt, da.dRate,
+
+        d.lLocId
+
+    FROM TXNTYP AS dt
+
+    INNER JOIN TXNHDR AS d ON dt.lTypId = d.lTypId AND NOT (dt.bComp = 0 AND dt.bPrjDet = 0 AND dt.bProfitCenter = 0)
+
+    INNER JOIN TXNACC AS da ON d.lId = da.lId
+
+    INNER JOIN TXNACCSUB AS ds ON da.lId = ds.lId AND da.lLine = ds.lLine AND ds.cTyp = 'P' AND ds.bDel = 0
+
+    WHERE d.bDel = 0 AND da.bDel = 0
+
+)
+
+SELECT DISTINCT d.*
+
+INTO #TXNACC
+
+FROM vTxnHdr AS d
+
+INNER JOIN ACCMST AS a ON d.lAccId = a.lId
+
+WHERE (d.dAmtDr + d.dAmtCr > 0) AND d.lCompId IN (4, 27, 28, 40, 93, 7, 8, 9, 25, 26) AND d.lClosed <= 0;
+
+ 
+
+SELECT DISTINCT d.lTypId, cu.sName AS CurType, lFinTyp, d.sName, d.dCurrCnv, c1.sName CurType1,
+
+ISNULL(CASE WHEN NOT d.lCurrId = 0 THEN (SELECT TOP 1 cd.dCurrCnv FROM CURDET cd WHERE cd.lid = 1 AND lCurrId = 0 ORDER BY dtWefDate DESC) ELSE d.dCurrCnv END, 1) AS CurRate,
+
+d.lId, d.sPrefix, d.lDocNo AS TrnNo, d.sExtNo, d.sDocNo AS sDocument,
+
+CONVERT(VARCHAR(20), d.dtDocDate) AS mDocDate,
+
+CONVERT(VARCHAR(20), d.dtDueDate) AS mDueDate, d.dtDueDate, d.dtDocDate, d.dTotal, d.bDel, d.lClosed, pt.sName AS PayTrm, ISNULL(pt.dValue, 0) AS PayTrmDays, cm.lId AS lCompId, cm.sRemarks AS CompanyName, '' AS Narration
+
+INTO #TXNHDR
+
+FROM #TXNACC AS d
+
+INNER JOIN CURMST cu ON d.lCurrId = cu.lId
+
+INNER JOIN CMPNY AS cm ON d.lCompId = cm.lId
+
+INNER JOIN CURMST AS c1 ON cm.lCurrId = c1.lId
+
+INNER JOIN ACCMST AS a ON d.lAccId = a.lId
+
+INNER JOIN ACCTYP AS act ON act.lTypId = a.lTypId
+
+LEFT JOIN PayTrm AS pt ON d.lPayTrmId = pt.lId
+
+WHERE d.bDel = 0 AND cm.lId IN (4, 27, 28, 40, 93, 7, 8, 9, 25, 26) AND act.cLdgTyp = 'S';
+
+ 
+
+SELECT d.lId,
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Item Name' THEN sValue ELSE '' END), '') AS [Item Name],
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Purchase Order Date' THEN sValue ELSE '' END), '') AS [Purchase Order Date],
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Purchase Order No' THEN sValue ELSE '' END), '') AS [Purchase Order No],
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Bill of Entry Date' THEN sValue ELSE '' END), '') AS [Bill of Entry Date],
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Bill of Entry No' THEN sValue ELSE '' END), '') AS [Bill of Entry No],
+
+ISNULL(MAX(CASE WHEN cf.sName = 'Bank Details' THEN sValue ELSE '' END), '') AS [Bank Details]
+
+INTO #vTXNCF 
+
+FROM #TXNHDR AS d
+
+INNER JOIN TXNCF AS cf ON d.lId = cf.lId AND cf.lLine = 0
+
+GROUP BY d.lId;
+
+ 
+
+WITH vBusCon AS (
+
+    SELECT ROW_NUMBER() OVER (PARTITION BY lid ORDER BY lid) AS Rowno, bc.*
+
+    FROM BUSCNT bc
+
+), vAcc AS (
+
+    SELECT DISTINCT a.lId, a.sCode, a.sName, act.cAccTyp, c.sName AS GroupName, MAX(dCreditLimit) dCreditLimit, MAX(dCreditDay) dCreditDay, act.cLdgTyp,
+
+    ISNULL(CASE WHEN ba.lMSMETyp = 1 THEN 'Micro' WHEN ba.lMSMETyp = 2 THEN 'Small' WHEN ba.lMSMETyp = 3 THEN 'Medium' END, '') AS sMSME,
+
+    CASE WHEN ISNULL(MAX(bc.sName), '') = '' THEN ISNULL(MAX(ad.sName), '') ELSE ISNULL(MAX(bc.sName), '') END AS ConName,
+
+    CASE WHEN ISNULL(MAX(bc.sMobile), '') = '' THEN ISNULL(MAX(ad.sMobile), '') ELSE ISNULL(MAX(bc.sMobile), '') END AS ConMobile 
+
+    FROM ACCMST AS a
+
+    INNER JOIN ACCTYP act ON act.lTypId = a.lTypId 
+
+    LEFT JOIN BUSMST b ON b.lAccId = a.lId
+
+    LEFT JOIN [BUSADD] ad ON ad.lId = b.lId AND ad.bDefault = 1
+
+    LEFT JOIN vBusCon bc ON b.lid = bc.lid AND Rowno = 1
+
+    LEFT JOIN (
+
+        SELECT MAX(lMSMETyp) lMSMETyp, lId
+
+        FROM BUSADD
+
+        GROUP BY lId
+
+    ) AS ba ON b.lId = ba.lId
+
+    INNER JOIN COAMST c ON a.lCoaId = c.lId 
+
+    WHERE act.cLdgTyp = 'S'
+
+    GROUP BY a.lId, a.sCode, a.sName, act.cAccTyp, act.cLdgTyp, ba.lMSMETyp, c.sName
+
+)
+
+SELECT *
+
+INTO #vACC
+
+FROM vAcc;
+
+ 
+
+WITH vTxnCf1 AS (
+
+    SELECT d.lId, MAX(CASE WHEN cf.sName LIKE '%Reference No.%' OR cf.sName LIKE '%Invoice No.%' THEN sValue ELSE '' END) AS RefNo,
+
+    MAX(CASE WHEN cf.sName LIKE '%Reference Dt.%' OR cf.sName LIKE '%Invoice Dt.%' THEN sValue ELSE '' END) AS RefDate
+
+    FROM #TXNHDR AS d
+
+    INNER JOIN TXNCF AS cf ON d.lId = cf.lId
+
+    WHERE NOT sValue = '' AND cf.lLine = 0 AND (cf.sName LIKE '%Reference Dt.%' OR cf.sName LIKE '%Invoice Dt.%' OR cf.sName LIKE '%Reference No.%' OR cf.sName LIKE '%Invoice No.%')
+
+    AND d.bDel = 0
+
+    GROUP BY d.lId
+
+)
+
+SELECT *
+
+INTO #vTXNCF1
+
+FROM vTXNCf1;
+
+ 
+
+WITH vTxnAcc AS (
+
+    SELECT DISTINCT d.lId, d.lTypId, d.lLine, d.lAccId, a.GroupName, d.dAmtCr, d.dAmtDr, d.dOtstndAmt, (d.dRate * d.dCurrCnv) AS dRate,
+
+    dCreditLimit CrLimit, dCreditDay AS CrDays,
+
+    CASE WHEN d.dtDueDate <> 0 THEN ISNULL(CONVERT(INT, DATEDIFF(DAY, CONVERT(VARCHAR, d.dtDueDate, 112), CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), 20240205, 111), 111), 112))), 0) ELSE 0 END AS OverdueDays,
+
+    CASE WHEN d.dtDueDate <> 0 THEN CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), d.dtDueDate, 111), 111), 112) ELSE CONVERT(VARCHAR, d.dtDueDate) END AS OverdueDate
+
+    FROM #TXNACC AS d
+
+    INNER JOIN #vAcc a ON a.lid = d.lAccId
+
+    LEFT OUTER JOIN #vTxnCf1 cf ON d.lId = cf.lId
+
+    INNER JOIN #TXNHDR AS dh ON d.lid = dh.lid
+
+), vTxnSett AS (
+
+    SELECT DISTINCT d.lId, d.lLine, CASE WHEN MAX(d.dAmtDr) > 0 THEN ISNULL(SUM(ds.dAdjAmtDr - ds.dAdjAmtcr), 0) ELSE ISNULL(SUM(ds.dAdjAmtCr - ds.dAdjAmtDr), 0) END AS dAmt,
+
+    CASE WHEN MAX(d.dAmtDr) > 0 THEN CASE WHEN d.lFinTyp IN (-5, -6, -7, -8) THEN SUM((ds.dAdjAmtDr - ds.dAdjAmtCr) / d.dCurrCnv) ELSE SUM((ds.dAdjAmtDr - ds.dAdjAmtCr) / ds.dCurrCnv) END 
+
+    ELSE CASE WHEN d.lFinTyp IN (-5, -6, -7, -8) THEN SUM((ds.dAdjAmtCr - ds.dAdjAmtDr) / d.dCurrCnv) ELSE SUM((ds.dAdjAmtCr - ds.dAdjAmtDr) / ds.dCurrCnv) END END AS dAmtFC,
+
+    ISNULL(ds.bSystem, 0) bSystem
+
+    FROM #TXNACC d
+
+    INNER JOIN #vAcc a ON a.lid = d.lAccId
+
+    LEFT JOIN (
+
+        SELECT ds.dAdjAmtDr, ds.dAdjAmtcr, ds.lId, ds.lLine, ds.bSystem, ds.lAccId, d.dCurrCnv
+
+        FROM #TXNACC d
+
+        INNER JOIN TXNFINSET AS ds ON ds.lId = d.lId AND d.lLine = ds.lLine AND d.bDel = 0
+
+        INNER JOIN TXNHDR AS dh ON ds.lRefId = dh.lId
+
+        INNER JOIN ACCMST AS a ON d.lAccId = a.lId
+
+        INNER JOIN ACCTYP AS at ON a.lTypId = at.lTypId AND NOT at.bDocAdj = 0 
+
+        INNER JOIN TxnTyp t2 ON t2.lTypId = ds.lRefTypId AND t2.lFinTyp < 2
+
+        WHERE dh.bDel = 0 AND dh.lCompId IN (4, 27, 28, 40, 93, 7, 8, 9, 25, 26)
+
+    ) AS ds ON d.lId = ds.lId AND d.lLine = ds.lLine AND d.lAccId = ds.lAccId AND d.lCompId IN (4, 27, 28, 40, 93, 7, 8, 9, 25, 26)
+
+    GROUP BY d.lId, d.dAmtDr, d.lLine, d.lFinTyp, ds.bSystem
+
+), vSumm AS (
+
+    SELECT lFinTyp, d.lTypId, dtDocDate, da.lAccId, a.sCode AS AccCode, a.sName AS AccName, da.GroupName, a.sMSME, d.sName AS TrnTyp, d.lid AS lid, d.sDocument AS TrnNo,
+
+    ISNULL((RefNo), '') AS RefNo, ISNULL((RefDate), '') AS RefDate, CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), d.mDocDate)), 106) AS TrnDate,
+
+    d.dtDueDate AS DueDate, CurType, CurType1, CurRate, CrLimit, CrDays, OverdueDays, CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), OverdueDate)), 106) AS OverdueDate,
+
+    SUM(da.dAmtCr) AS dAmtCr, SUM(da.dAmtDr) AS dAmtDr,
+
+    ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) AS BillAmt,
+
+    ABS(ISNULL(SUM(ds.dAmt), 0)) AS PaidAmt,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmt), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0)) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(SUM(ds.dAmt), 0)) END AS BillOSAmt,
+
+    0 AS UnAdjAmt,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmt), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0)) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(SUM(ds.dAmt), 0)) END AS OsAmt,
+
+    SUM(da.dAmtCr) / CurRate AS dAmtCr_FC, SUM(da.dAmtDr) / CurRate AS dAmtDr_FC,
+
+    (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0)) / CurRate AS BillAmt_FC,
+
+    ABS(ISNULL(SUM(dAmtFC), 0)) AS PaidAmt_FC,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmtFC), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate - (ISNULL(SUM(ds.dAmtFC), 0)) END AS BillOSAmt_FC,
+
+    0 AS UnAdjAmt_FC,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmtFC), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate - (ISNULL(SUM(ds.dAmtFC), 0)) END AS OsAmt_FC,
+
+    ISNULL(ds.bSystem, 0) bSystem, PayTrm, PayTrmDays,
+
+    d.CompanyName, d.lCompId,
+
+    '' AS Narration,
+
+    CASE WHEN SUM(da.dAmtDr) > SUM(da.dAmtCr) THEN 'Dr' ELSE 'Cr' END AS cSgn
+
+    FROM #TXNHDR AS d
+
+    INNER JOIN vTXNACC AS da ON d.lId = da.lId
+
+    INNER JOIN #vACC AS a ON da.lAccId = a.lId
+
+    INNER JOIN vTxnSett AS ds ON da.lId = ds.lId AND da.lLine = ds.lLine
+
+    LEFT JOIN #vTxnCf1 AS cf ON d.lId = cf.lId
+
+    WHERE lFinTyp IN (-1, -2) AND da.lLine = 0 AND ISNULL(((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(ds.dAmt, 0)) <> 0
+
+    GROUP BY lFinTyp, d.lTypId, dtDocDate, da.lAccId, a.sCode, a.sName, da.GroupName, a.sMSME, d.sName, d.lid, d.sDocument, RefNo, RefDate, d.mDocDate,
+
+    d.dtDueDate, CurType, CurType1, CurRate, CrLimit, CrDays, OverdueDays, OverdueDate, bSystem, PayTrm, PayTrmDays, cLdgTyp, d.CompanyName, d.lCompId
+
+ 
+
+    UNION ALL
+
+ 
+
+    SELECT lFinTyp, d.lTypId, dtDocDate, da.lAccId, a.sCode AS AccCode, a.sName AS AccName, da.GroupName, a.sMSME, d.sName AS TrnTyp, d.lid AS lid, d.sDocument AS TrnNo,
+
+    ISNULL((CASE WHEN lFinTyp = -13 THEN cf1.RefNo ELSE cf.RefNo END), '') AS RefNo, ISNULL((CASE WHEN lFinTyp = -13 THEN cf1.RefDate ELSE cf.RefDate END), '') AS RefDate,
+
+    CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), d.mDocDate)), 106) AS TrnDate,
+
+    d.dtDueDate AS DueDate, CurType, CurType1, CurRate, CrLimit, CrDays, OverdueDays, CONVERT(VARCHAR, CONVERT(DATETIME, CONVERT(VARCHAR(10), OverdueDate)), 106) AS OverdueDate,
+
+    SUM(da.dAmtCr) AS dAmtCr, SUM(da.dAmtDr) AS dAmtDr,
+
+    CASE WHEN lFinTyp = -13 AND NOT MAX(da.dRate) = 0 THEN MAX(da.dRate) WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN 0 ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) END AS BillAmt,
+
+    ABS(ISNULL(SUM(ds.dAmt), 0) - (CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) ELSE 0 END)) AS PaidAmt,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmt), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0)) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(SUM(ds.dAmt), 0)) END AS BillOSAmt,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(SUM(ds.dAmt), 0)) ELSE 0 END AS UnAdjAmt,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmt), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0)) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(SUM(ds.dAmt), 0)) END AS OsAmt,
+
+    SUM(da.dAmtCr) / CurRate AS dAmtCr_FC, SUM(da.dAmtDr) / CurRate AS dAmtDr_FC,
+
+    CASE WHEN lFinTyp = -13 AND NOT MAX(da.dRate) = 0 THEN MAX(da.dRate) WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN 0 ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) END / CurRate AS BillAmt_FC,
+
+    ABS(ISNULL(SUM(ds.dAmtFC), 0) - (CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) ELSE 0 END) / CurRate) AS PaidAmt_FC,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmtFC), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate - (ISNULL(SUM(ds.dAmtFC), 0)) END AS BillOSAmt_FC,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate - (ISNULL(SUM(ds.dAmtFC), 0)) ELSE 0 END AS UnAdjAmt_FC,
+
+    CASE WHEN (cLdgTyp = 'S' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) > 0) OR (cLdgTyp = 'C' AND ISNULL(SUM((da.dAmtDr) - (da.dAmtCr)), 0) < 0) THEN (ISNULL(SUM(ds.dAmtFC), 0)) - (ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate) ELSE ISNULL(SUM((da.dAmtDr) + (da.dAmtCr)), 0) / CurRate - (ISNULL(SUM(ds.dAmtFC), 0)) END AS OsAmt_FC,
+
+    ISNULL(ds.bSystem, 0) bSystem, PayTrm, PayTrmDays,
+
+    d.CompanyName, d.lCompId,
+
+    '' AS Narration,
+
+    CASE WHEN SUM(da.dAmtDr) > SUM(da.dAmtCr) THEN 'Dr' ELSE 'Cr' END AS cSgn
+
+    FROM #TXNHDR AS d
+
+    INNER JOIN vTXNACC AS da ON d.lId = da.lId
+
+    INNER JOIN #vACC AS a ON da.lAccId = a.lId
+
+    INNER JOIN vTxnSett AS ds ON da.lId = ds.lId AND da.lLine = ds.lLine
+
+    LEFT JOIN #vTxnCf1 AS cf ON ds.lId = cf.lId AND NOT lFinTyp = -13
+
+    LEFT JOIN #vTxnCf1 AS cf1 ON d.lId = cf1.lId AND lFinTyp = -13 
+
+    WHERE lFinTyp NOT IN (-1, -2) AND (ISNULL(((da.dAmtDr) + (da.dAmtCr)), 0) - (ISNULL(ds.dAmt, 0)) <> 0)
+
+    GROUP BY lFinTyp, d.lTypId, dtDocDate, da.lAccId, a.sCode, a.sName, da.GroupName, a.sMSME, d.sName, d.lid, d.sDocument, cf1.RefNo, cf.RefNo, cf.RefDate, cf1.RefDate, d.mDocDate, d.dtDueDate, CurType, CurType1, CurRate, CrLimit, CrDays, OverdueDays, OverdueDate, bSystem, PayTrm, PayTrmDays, cLdgTyp, d.CompanyName, d.lCompId
+
+), vSumm2 AS (
+
+    SELECT ROW_NUMBER() OVER (ORDER BY AccName, lAccId, dtDocDate, lid) AS myRow, *
+
+    FROM vSumm
+
+    WHERE bSystem = 0 AND ROUND(CASE WHEN ABS(OsAmt) < 0.001 THEN 0 ELSE OsAmt END, @decimal) <> 0
+
+)
+
+SELECT lFinTyp, ROW_NUMBER() OVER (PARTITION BY lAccId ORDER BY AccName, lAccId) AS TmpRow, myRow, lAccId, AccCode, AccName, GroupName, sMSME, da.lTypId, da.lid, TrnTyp, TrnNo, TrnDate,
+
+[Item Name], [Purchase Order Date], [Purchase Order No], [Bill of Entry Date], [Bill of Entry No], [Bank Details],
+
+RefNo, RefDate, PayTrm, PayTrmDays, DueDate, CurType, CurType1, CurRate, BillAmt, PaidAmt, CASE WHEN ABS(BillOSAmt) < 0.0001 THEN 0 ELSE BillOSAmt END AS BillOSAmt, CrLimit, CrDays, OverdueDays, OverdueDate, UnAdjAmt, CASE WHEN ABS(OsAmt) < 0.0001 THEN 0 ELSE OsAmt END AS OsAmt, BillAmt_FC, PaidAmt_FC, CASE WHEN ABS(BillOSAmt_FC) < 0.0001 THEN 0 ELSE BillOSAmt_FC END AS BillOSAmt_FC, UnAdjAmt_FC, CASE WHEN ABS(OsAmt_FC) < 0.0001 THEN 0 ELSE OsAmt_FC END AS OsAmt_FC, CompanyName, lCompId, Narration, cSgn
+
+INTO #temp
+
+FROM vSumm2 da
+
+LEFT JOIN #vTXNCF AS cf ON da.lId = cf.lId;
+
+ 
+
+WITH cte AS (
+
+    SELECT lAccId, AccCode, AccName, GroupName,
+
+           ROW_NUMBER() OVER (PARTITION BY lAccId ORDER BY myRow) AS rn
+
+    FROM #temp
+
+)
+
+UPDATE t
+
+SET t.AccCode = c.AccCode, t.AccName = c.AccName, t.GroupName = c.GroupName
+
+FROM #temp t
+
+INNER JOIN cte c ON t.lAccId = c.lAccId AND c.rn = 1
+
+WHERE t.AccCode = '' OR t.AccName = '' OR t.GroupName = '';
+
+ 
+
+SELECT TmpRow, myRow, lAccId, lTypId, #temp.lid,
+
+CompanyName AS [Company Name], lCompId,
+
+AccCode AS [Party Code], AccName AS [Party Name], GroupName,
+
+TrnTyp AS [Trans Type], TrnNo AS [Trans No], TrnDate AS [Trans Date], RefNo AS [Ref No], RefDate AS [Ref Date],
+
+[Item Name], [Purchase Order Date], [Purchase Order No], [Bill of Entry Date], [Bill of Entry No], [Bank Details],
+
+CurType1 AS [Currency Code], 1 AS [Conversion Rate],
+
+BillAmt AS [Bill Amt], PaidAmt AS [Paid Amt],
+
+BillOSAmt AS [Bill OS Amt],
+
+CrLimit AS [Credit Limit], 0 AS [Credit Limit Days], PayTrm, PayTrmDays, DueDate,
+
+OverdueDate AS [Overdue Date],
+
+OverdueDays AS [Overdue Days],
+
+UnAdjAmt AS [Unadjustment Amt], OsAmt AS [Outstanding Amt],
+
+Narration, cSgn,
+
+ISNULL((SELECT COUNT(lAccId) FROM #temp HAVING COUNT(lAccId) > 1), 0) AS lRecordCount
+
+FROM #temp
+
+ORDER BY myRow, TmpRow, lAccId;
+
+ 
+
+DROP TABLE IF EXISTS #temp, #TXNHDR, #vTXNCF, #vACC, #TXNACC, #vTXNCF1;

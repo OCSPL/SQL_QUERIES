@@ -1,0 +1,122 @@
+DECLARE
+    @CompanyID INT,
+    @YearId INT,
+    @FromDate DATETIME,
+    @ToDate DATETIME,
+    @SuppCode INT = 0,
+    @ItemCode INT = 0
+
+BEGIN
+
+DECLARE
+    @RoundoffUpto INT = 0;
+
+SELECT @RoundoffUpto = ISNULL(cm.lDigDec, 5)
+FROM curmst cm
+INNER JOIN cmpny cp ON cm.lId = cp.lCurrId
+WHERE cp.lid = @CompanyID;
+
+IF (@RoundoffUpto = 0)
+BEGIN
+    SET @RoundoffUpto = 5;
+END;
+
+SELECT
+    ---Header fields
+    row_number() OVER (ORDER BY HDR.sDocNo) AS RowNumber,
+    typ.sname AS [Transaction Type],
+    HDR.sDocNo AS [Invoice No],
+    CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate)), 103) AS [Invoice Date],
+    SUPP.sName AS [Supplier Name - Billing],
+    HDR.sAccAdd1 AS [Billing Address],
+    SUPP_SHIP.sName AS [Supplier Name - Shipping],
+    HDR.sAccAdd2 AS [Shipping Address],
+    cny.sName AS [Country],
+    SUPTAX.sValue AS [PAN No.],
+    SUPTAXG.sValue AS [GSTIN No.],
+    TRANS.sCode AS [Transporter Code],
+    TRANS.sName AS [Transporter Name],
+    -- Header Custom Fields
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'GRN No' AND lLine = 0) AS [GRN No],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName LIKE '%Purchase Order No%' AND lLine = 0) AS [Purchase Order No.],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName LIKE '%Purchase Order Date%' AND lLine = 0) AS [Purchase Order Date.],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'GRN Date' AND lLine = 0) AS [GRN Date],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Customer Invoice No.' AND lLine = 0) AS [Customer Invoice No.],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Customer Invoice Dt.' AND lLine = 0) AS [Customer Invoice Date],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'LR No' AND lLine = 0) AS [LR No],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'LR Date' AND lLine = 0) AS [LR Date],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Bill of Entry No' AND lLine = 0) AS [Bill of Entry No],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Bill of Entry Date' AND lLine = 0) AS [Bill of Entry Date],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'E-Way Bill No' AND lLine = 0) AS [E-Way Bill No],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'E-Way Bill Date' AND lLine = 0) AS [E-Way Bill Date],
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Vehicle No' AND lLine = 0) AS [Vehicle No],
+    CUR.sName AS [Currency],
+    CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(HDR.dCurrCnv, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, HDR.dCurrCnv), 0) + @RoundoffUpto + 1)) AS [Conversion Rate],
+    HDR.sNarr,
+    ----detail fields
+    DET.lLine AS [Line No],
+    ACC.sName AS [Ledger Name],
+    ITP.sName AS [Item Type],
+    ITM.sCode AS [Item Code],
+    ITM.sName AS [Item Name],
+    cf1.sValue AS [Inventory Category],
+    cf2.sValue AS [Inventory Sub Category],
+    DET.sNarr AS [Item Narration],
+    HSN.sName AS [HSN Code],
+    UOM.sCode AS UOM,
+    CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(DET.dQty * CASE WHEN hdr.lTypId IN (338, 1008) THEN -1 ELSE 1 END, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, DET.dQty), 0) + @RoundoffUpto + 1)) AS [Quantity],
+    -- Detail custom field
+    (SELECT MAX(sValue) FROM TXNCF WHERE lid = HDR.lid AND sName = 'Required By Date' AND lLine = DET.lLine) AS [Required By Date],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) AS [Line Item Rate],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Rate' AND lLine = DET.lLine) END AS [Line Item Amount],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Discount' AND lLine = DET.lLine) AS [Line Discount Rate],
+    (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Discount' AND lLine = DET.lLine) AS [Line Discount Amount],
+    (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Net Rate' AND lLine = DET.lLine) AS [Line Net Amount],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Assessable Value' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Assessable Value' AND lLine = DET.lLine) END AS [Line Assessable Value Amount],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('CGST', 'CGST 9.00') AND lLine = DET.lLine) AS [Line CGST Rate],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('CGST', 'CGST 9.00') AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('CGST', 'CGST 9.00') AND lLine = DET.lLine) END AS [Line CGST Amount],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('SGST', 'SGST 9.00') AND lLine = DET.lLine) AS [Line SGST Rate],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('SGST', 'SGST 9.00') AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName IN ('SGST', 'SGST 9.00') AND lLine = DET.lLine) END AS [Line SGST Amount],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST' AND lLine = DET.lLine) AS [Line IGST Rate],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST' AND lLine = DET.lLine) END AS [Line IGST Amount],
+    (SELECT CONVERT(VARCHAR, SUBSTRING(CONVERT(VARCHAR, ROUND(dRate, @RoundoffUpto)), 0, CHARINDEX('.', CONVERT(VARCHAR, dRate), 0) + @RoundoffUpto + 1)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST.' AND lLine = DET.lLine) AS [Line IGST Reveresible Rate],
+    (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'IGST.' AND lLine = DET.lLine) AS [Line IGST Reveresible Amount],
+    (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dRate), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND lFieldNo = 18 AND lLine = DET.lLine) AS [Line TDS Rate],
+    (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND lFieldNo = 18 AND lLine = DET.lLine) AS [Line TDS Amount],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Tax Amount' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Tax Amount' AND lLine = DET.lLine) END AS [Line Total Tax Amount],
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((-dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Amount' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'Total Amount' AND lLine = DET.lLine) END AS [Line Total Amount],
+    TDS.sName AS TDS,
+    CASE WHEN hdr.lTypId IN (338, 1008) THEN (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'TDS Assessable' AND lLine = DET.lLine) ELSE (SELECT CONVERT(DECIMAL(21, 2), ROUND(ISNULL((dValue), 0), 2)) FROM TXNCHRG WHERE lid = HDR.lid AND sName = 'TDS Assessable' AND lLine = DET.lLine) END AS [Line TDS Assessable]
+    -- Convert (Decimal(21,2),round(isnull((HDR.dTotal),0),2) ) [Grand Total]
+FROM
+    TXNHDR HDR
+LEFT JOIN BUSMST AS SUPP ON HDR.lAccId1 = SUPP.lId
+LEFT JOIN CNTY cny ON HDR.lCntryId = cny.lId
+LEFT JOIN BUSMST AS SUPP_SHIP ON HDR.lAccId2 = SUPP_SHIP.lId
+LEFT JOIN BUSMST AS TRANS ON HDR.lAccId5 = TRANS.lId
+LEFT JOIN BUSTAX AS SUPTAX ON SUPTAX.lId = SUPP.lId AND SUPTAX.lAddId = HDR.lAccAdd1 AND SUPTAX.sName = 'PAN No.'
+LEFT JOIN BUSTAX AS SUPTAXG ON SUPTAXG.lId = SUPP.lId AND SUPTAXG.lAddId = HDR.lAccAdd1 AND SUPTAXG.sName = 'GSTIN No.'
+INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId
+LEFT JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
+LEFT JOIN ITMCF cf1 ON itm.lId = cf1.lId AND cf1.sName = 'Inventory Category'
+LEFT JOIN ITMCF cf2 ON itm.lId = cf2.lId AND cf2.sName = 'Inventory Sub Category'
+INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
+LEFT JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
+INNER JOIN UNTMST AS UOM2 ON DET.lUntId2 = UOM2.lId
+INNER JOIN CURMST AS CUR ON CUR.lid = HDR.lCurrId
+INNER JOIN TXNDET AS TXAC ON TXAC.lId = HDR.lId AND TXAC.lLine = DET.lLine
+INNER JOIN ACCMST AS ACC ON ACC.lId = TXAC.lAccId
+LEFT OUTER JOIN HSNMST AS HSN ON HSN.lid = DET.lHSNid
+LEFT JOIN TDSMST AS TDS ON TDS.lId = DET.lTDSId
+LEFT JOIN txntyp AS typ ON typ.ltypid = hdr.lTypId
+WHERE
+    HDR.ltypid IN (336, 343, 407, 526, 527, 806, 861, 862, 863, 864, 865, 866, 904, 905, 906, 907, 908, 909, 921, 922, 923, 930, 931, 945, 946, 957, 784, 955, 1074, 564, 994, 338, 1008)
+    AND hdr.bDel = 0
+    AND det.bDel = 0
+    AND DET.bDel <> -2
+    AND HDR.bDel <> 1
+    AND DET.lClosed <> -2
+    AND hdr.lClosed = 0
+    AND HDR.lClosed = 0;
+
+END;

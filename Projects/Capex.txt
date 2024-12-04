@@ -1,0 +1,167 @@
+DECLARE @FromDate DATETIME,
+        @ToDate DATETIME;
+
+DECLARE @lFromDate INT,
+        @lToDate INT;
+
+SET @lFromDate = CONVERT(INT, CONVERT(VARCHAR(8), CAST(@FromDate AS DATE), 112));
+SET @lToDate = CONVERT(INT, CONVERT(VARCHAR(8), CAST(@ToDate AS DATE), 112));
+
+WITH vItmBdgt AS (
+    SELECT
+        SUM(dt.dRate) AS bdgtAmt,dh.dtDocDate as [Start Date], cf.sValue as [End Date] ,
+
+        dh.lPrjId
+    FROM
+        TXNHDR dh
+    INNER JOIN TXNDET dt ON dh.lid = dt.lid
+    INNER JOIN CMPNY PRJ ON PRJ.lid = dh.lPRJid
+	LEFT JOIN txncf cf ON dh.lid = cf.lid AND cf.lLine = 0 AND cf.sname = 'End Date'
+    INNER JOIN ITMTYP it ON dt.lItmTyp = it.lTypId
+    WHERE
+        dh.lTypid = 746 AND it.cTyp != 'S'
+    GROUP BY
+        dh.lPrjId, dh.dtDocDate , cf.sValue 
+), vSerBdgt AS (
+    SELECT
+        SUM(dt.dRate) AS bdgtAmt,
+        dh.lPrjId
+    FROM
+        TXNHDR dh
+    INNER JOIN TXNDET dt ON dh.lid = dt.lid
+    INNER JOIN CMPNY PRJ ON PRJ.lid = dh.lPRJid
+    INNER JOIN ITMTYP it ON dt.lItmTyp = it.lTypId
+    WHERE
+        dh.lTypid = 746 AND it.cTyp = 'S'
+    GROUP BY
+        dh.lPrjId
+), vPOVal AS (
+    SELECT
+        SUM(dt.dRate * dQty2) AS poAmt,
+        dh.lPrjId
+    FROM
+        TXNHDR dh
+    INNER JOIN TXNDET dt ON dh.lid = dt.lid
+    INNER JOIN ITMTYP it ON dt.lItmTyp = it.lTypId
+    WHERE
+        dh.lTypid = 753 AND NOT (it.cTyp = 's')
+    GROUP BY
+        dh.lPrjId
+), vPOSerVal AS (
+    SELECT
+        SUM(dt.dRate * dQty2) AS poAmt,
+        dh.lPrjId
+    FROM
+        TXNHDR dh
+    INNER JOIN TXNDET dt ON dh.lid = dt.lid
+    INNER JOIN ITMTYP it ON dt.lItmTyp = it.lTypId
+    WHERE
+        dh.lTypid = 947 AND (it.cTyp = 's')
+    GROUP BY
+        dh.lPrjId
+), vViewd AS (
+    SELECT
+        h.lPrjId,
+        CASE
+            WHEN h.ltypId = 987 THEN SUM(ABS(ISNULL(d.dStkVal, 0)))
+            ELSE 0
+        END AS [PO Material Cost],
+        CASE
+            WHEN h.ltypId = 784 THEN SUM(ISNULL(d.dQty2, 0) * ISNULL(cg.dRate, 0))
+            ELSE 0
+        END AS [PO Service Cost]
+    FROM
+        TXNHDR h
+    INNER JOIN TXNDET d ON h.lId = d.lId
+    LEFT JOIN TXNCHRG cg ON d.lId = cg.lId AND d.lLine = cg.lLine AND cg.sName = 'Assesable Value'
+    WHERE
+        h.lTypId IN (987, 784)
+        AND h.bdel = 0
+        AND h.lClosed = 0
+    GROUP BY
+        h.lPrjId,
+        h.ltypId
+), vView AS (
+    SELECT
+        lPrjId,
+        SUM([PO Material Cost]) AS [PO Material Cost],
+        SUM([PO Service Cost]) AS [PO Service Cost]
+    FROM
+        vViewd
+    GROUP BY
+        lPrjId
+), vTxnDet AS (
+    SELECT
+        dd.lLocId,
+        SUM(CASE WHEN d.dtDocDate < @lFromDate THEN dd.dQtyStk ELSE 0 END) AS Opening,
+        SUM(CASE WHEN d.dtDocDate < @lFromDate THEN dd.dStkVal ELSE 0 END) AS OpeningVal,
+        SUM(dd.dQtyStk) AS Closing,
+        SUM(dd.dStkVal) AS ClosingVal
+    FROM
+        TXNTYP AS dt
+    INNER JOIN TXNHDR AS d ON dt.lTypId = d.lTypId AND dt.lStkTyp < 2
+    INNER JOIN TXNDET AS dd ON d.lId = dd.lId
+    WHERE
+        d.bDel = 0
+        AND d.lClosed <= 0
+        AND dd.bDel = 0
+        AND dd.cFlag IN ('I', 'A')
+        AND NOT dd.dQtyStk = 0
+        AND (d.dtDocDate <= @lToDate)
+        AND dd.lLocId IN (2797, 2586, 2618, 2721, 2723, 2725, 2727, 2704, 2729, 2731, 2713, 2711, 2733, 2739, 2741, 2752, 2787, 2808, 2811)
+        AND dd.lItmTyp IN (0, 55, 56, 57, 60, 61, 62, 63, 65, 66, 67, 68, 69, 70, 72, 73, 74, 75, 76, 77, 78, 80, 81)
+    GROUP BY
+        dd.lLocId
+), vStk AS (
+    SELECT
+        c.lId AS lPrjId,
+        SUM(OpeningVal) AS OpeningVal,
+        SUM(ClosingVal) AS ClosingVal
+    FROM
+        vTxnDet v
+    LEFT JOIN DIMMST d ON v.lLocId = d.lId
+    INNER JOIN CMPNY c ON d.lCompId = c.lId AND c.cTyp = 'A'
+    GROUP BY
+        c.lId
+)
+SELECT
+    c.sName AS [Project Name],
+	c.sRemarks as [Project Desciption] ,
+	CASE 
+        WHEN ISDATE(CONVERT(VARCHAR(10), [Start Date], 105)) = 1 
+        THEN CONVERT(varchar(10), [Start Date], 105) 
+        ELSE NULL 
+    END AS [Start Date],
+	[End Date],
+    CASE 
+        WHEN ISDATE(CONVERT(VARCHAR(10), c.dtClosed, 105)) = 1 
+        THEN CONVERT(varchar(10), c.dtClosed, 105) 
+        ELSE NULL 
+    END AS [Project Closure Date],
+    CONVERT(DECIMAL(30, 2), MAX(ISNULL(vi.bdgtAmt, 0))) AS [Material Cost],
+    CONVERT(DECIMAL(30, 2), MAX(ISNULL(vs.bdgtAmt, 0))) AS [Service Cost],
+    CONVERT(DECIMAL(30, 2), MAX(ISNULL(vi.bdgtAmt, 0) + ISNULL(vs.bdgtAmt, 0))) AS [Approved Amount],
+    CONVERT(DECIMAL(30, 2), MAX(ISNULL(vp.poAmt, 0))) AS [PO Material Cost],
+    CONVERT(DECIMAL(30, 2), MAX(ISNULL(vsp.poAmt, 0))) AS [PO Service Cost],
+    CONVERT(DECIMAL(30, 2), SUM(ISNULL([PO Material Cost], 0))) AS [Consumed Material Cost],
+    CONVERT(DECIMAL(30, 2), SUM(ISNULL([PO Service Cost], 0))) AS [Consumed Service Cost],
+    CONVERT(DECIMAL(30, 2), SUM(ISNULL([PO Material Cost], 0) + ISNULL([PO Service Cost], 0))) AS [Total Value],
+    CONVERT(DECIMAL(30, 2), (MAX(ISNULL(vi.bdgtAmt, 0) + ISNULL(vs.bdgtAmt, 0)) - SUM(ISNULL([PO Material Cost], 0) + ISNULL([PO Service Cost], 0)))) AS [Balance To Consume],
+    ABS(CONVERT(DECIMAL(30, 2), MAX(ISNULL(vst.OpeningVal, 0)))) AS [Opening Value],
+    ABS(CONVERT(DECIMAL(30, 2), MAX(ISNULL(vst.ClosingVal, 0)))) AS [Closing Value]
+FROM
+    vView v
+LEFT JOIN vItmBdgt vi ON v.lPrjId = vi.lPrjId
+LEFT JOIN vSerBdgt vs ON v.lPrjId = vs.lPrjId
+LEFT JOIN CMPNY c ON v.lPrjId = c.lId
+LEFT JOIN vPOVal vp ON v.lPrjId = vp.lPrjId
+LEFT JOIN vPOSerVal vsp ON v.lPrjId = vsp.lPrjId
+LEFT JOIN vStk vst ON v.lPrjId = vst.lPrjId
+GROUP BY
+    c.sName,
+	c.sRemarks,
+    c.dtClosed,
+	[Start Date],
+	[End Date]
+ORDER BY
+    [Project Name];

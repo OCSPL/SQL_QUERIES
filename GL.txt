@@ -1,0 +1,91 @@
+-- Step 1: Create temporary table #TXNTYP
+Select dt.lTypId, dt.sName, dt.lFinTyp, dt.bItm, dt.bQty
+into #TXNTYP
+from TXNTYP as dt
+where dt.lFinTyp < 2;
+
+-- Step 2: Create temporary table #TXNHDR
+Select dt.lTypId, dt.sName, dt.lFinTyp, dt.bItm, dt.bQty, d.lId, 
+       CONVERT(date, CONVERT(varchar, d.dtDocDate)) as dtDocDate, 
+       d.sDocNo, d.lCompId, d.lCurrId, d.dCurrCnv
+into #TXNHDR
+from #TXNTYP as dt
+inner join TXNHDR as d on dt.lTypId = d.lTypId
+where d.bDel = 0 and d.lClosed <= 0
+and d.lCompId in (27)
+and CONVERT(date, CONVERT(varchar, d.dtDocDate)) >= '2022-01-01';
+
+-- Step 3: Create a view to handle date conversion and invalid dates
+with vView as (
+    Select 0 as lTypId, '' as sName, 0 as lFinTyp, 0 as cCurrId, 0 as lCurrId, 1 as dCurrCnv, 0 as lId, 
+           CONVERT(varchar, GETDATE(), 105) as dtDocDate, 'Opening' as sDocNo, 'A' as cFlag, 0 as lLine, 
+           at.lTypId as lAccTyp, da.lAccId, da.lEmpId, da.lAstId, 0 as lItmId, '' as sNarr, 0 as lChrgCatId, 0 as lChrgId, '' as UOM, 
+           Sum(Round(Case When d.dtDocDate < GETDATE() then da.dAmtDr - da.dAmtCr Else 0 End, Coalesce(cur.lDigDec, 2))) as dOpnAmt, 
+           0 as dAmtDr, 0 as dAmtCr
+    from #TXNHDR as d
+    inner join TXNACC as da on d.lId = da.lId
+    inner join CMPNY as c on d.lCompId = c.lId
+    inner join CURMST as cur on c.lCurrId = cur.lId
+    inner join ACCMST as a on da.lAccId = a.lId
+    inner join ACCTYP as at on a.lTypId = at.lTypId
+    where d.lId > 0
+    and ((at.cLdgTyp in ('I', 'E') and d.dtDocDate >= '2022-01-01') or (not at.cLdgTyp in ('I', 'E')))
+    Group by at.lTypId, da.lAccId, da.lEmpId, da.lAstId
+    Having Sum(Round(Case When d.dtDocDate < GETDATE() then da.dAmtDr - da.dAmtCr Else 0 End, Coalesce(cur.lDigDec, 2))) != 0
+    Union All
+    Select d.lTypId, d.sName, d.lFinTyp, c.lCurrId as cCurrId, d.lCurrId, d.dCurrCnv, d.lId, 
+           CONVERT(varchar, d.dtDocDate, 105) as dtDocDate, d.sDocNo, da.cFlag, da.lLine, at.lTypId as lAccTyp, da.lAccId, da.lEmpId, da.lAstId, 
+           0 as lItmId, da.sNarr, 0 as lChrgCatId, 0 as lChrgId, '' as UOM, 0 as dOpnAmt, 
+           Round(Case When d.dtDocDate >= '2022-01-01' then da.dAmtDr Else 0 End, Coalesce(cur.lDigDec, 2)) as dAmtDr, 
+           Round(Case when d.dtDocDate >= '2022-01-01' then da.dAmtCr Else 0 End, Coalesce(cur.lDigDec, 2)) as dAmtCr
+    from #TXNHDR as d
+    inner join CMPNY as c on d.lCompId = c.lId
+    inner join CURMST as cur on c.lCurrId = cur.lId
+    inner join TXNACC as da on d.lId = da.lId
+    inner join ACCMST as a on da.lAccId = a.lId
+    inner join ACCTYP as at on a.lTypId = at.lTypId
+    where d.dtDocDate >= '2022-01-01' and d.dtDocDate <= GETDATE()
+    and ((at.cLdgTyp in ('I', 'E') and d.dtDocDate >= '2022-01-01') or (not at.cLdgTyp in ('I', 'E')))
+)
+Select * into #vView from vView;
+
+-- Step 4: Create view vView2
+with vView2 as (
+    Select Sum(dOpnAmt) as dOpnAmt, Sum(dAmtDr) as dAmtDr, Sum(dAmtCr) as dAmtCr, lAccTyp, lAccId, x.dtDocDate, x.lId, x.sDocNo, x.lTypId, x.cFlag, x.sNarr
+    from #vView as x
+    Group by lAccTyp, lAccId, x.dtDocDate, x.lId, x.sDocNo, x.lTypId, x.cFlag, x.sNarr
+)
+Select * into #vView2 from vView2;
+
+-- Step 5: Create view vACCMST
+with vACCMST as (
+    Select distinct x.lTypId, at.sName as AccountType, x.lId as lAccId, x.sCode as AccountCode, x.sName as AccountName
+    from ACCTYP as at
+    inner join ACCMST as x on at.lTypId = x.lTypId
+    inner join (Select distinct lAccId from #vView2) as d on x.lId = d.lAccId
+)
+Select distinct * into #ACCMST from vACCMST;
+
+-- Step 6: Create view vView3
+with vView3 as (
+    Select row_number() Over (Order by a.AccountCode, a.AccountName, x.dtDocDate, x.lId, x.sDocNo, x.lTypId, x.cFlag, x.sNarr) as rowNo,
+           x.lAccId, a.AccountCode as sAccCode, a.AccountName as sAccName, x.lId, x.dtDocDate, x.sDocNo, x.lTypId, x.cFlag,
+           x.dOpnAmt, x.dAmtDr, x.dAmtCr, x.dOpnAmt + x.dAmtDr - x.dAmtCr as dAmt
+    from #vView2 as x
+    inner join #ACCMST as a on x.lAccId = a.lAccId
+    left join #TXNTYP as dt on x.lTypId = dt.lTypId
+)
+Select *, (Select Max(rowNo) from vView3) as lRecordCount
+from vView3
+
+Union All
+
+Select -1 as rowNo, 0 as lAccId, '' as sAccCode, '' as sAccName, 0 as lId, 
+       CONVERT(varchar, GETDATE(), 105) as dtDocDate, '' as sDocNo, 0 as lTypId, '' as cFlag,
+       Sum(x.dOpnAmt) as dOpnAmt, Sum(x.dAmtDr) as dAmtDr, Sum(x.dAmtCr) as dAmtCr, 
+       Sum(x.dOpnAmt + x.dAmtDr - x.dAmtCr) as dAmt,
+       (Select Max(rowNo) from vView3) as lRecordCount
+from vView3 as x;
+
+-- Step 7: Drop temporary tables
+Drop table #vView, #vView2, #TXNHDR, #TXNTYP, #ACCMST;
