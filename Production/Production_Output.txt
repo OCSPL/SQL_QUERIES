@@ -1,24 +1,36 @@
-SELECT
-                HDR.lid,
-                HDR.sDocNo AS [Output_Voucher_No],
-                CONVERT(varchar, CONVERT(date, CONVERT(varchar(8), HDR.dtDocDate)), 105) AS [Output_Voucher_Date],
-                ITM.sCode AS [Output_Item_Code],
-                ITP.sName As [Output_Item_Type] ,
-                ITM.sName AS [Output_Item_Name],
-                ITMCF.svalue as [FG_Name],
-                DET.sValue1 AS [Output_Batch_No],
-                DET.sValue6 AS [Output_Purity],
-                DET.sValue7 AS [Output_Recovery],
-                UOM.sCode AS [Output_UOM],
-                CONVERT(Decimal(18,3), DET.dQty2) AS [Output_Quantity],
-                CASE WHEN DET.dQty2 <> 0 THEN CONVERT(Decimal(18,3), DET.dstkval / DET.dQty2) ELSE 0 END AS [Output_Rate],
-                CONVERT(Decimal(18,3), DET.dstkval) AS [Output_Value]
-            FROM txnhdr HDR
-            INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
-            INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
-            INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmtyp
-            inner join ITMCF itmcf on det.lItmId=itmcf.lId and itmcf.lFieldNo=10 and itmcf.lLine=0
-            INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
-            WHERE HDR.ltypid IN (597,924,913,925,899,891)
-                AND HDR.lcompid = 27
-                AND hdr.bDel = 0
+TransposedPowerConsumption = 
+UNION(
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block A1", "Consumption", 'POWER CONSUMPTION'[Block A1], "Type", "Block A"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block A2", "Consumption", 'POWER CONSUMPTION'[Block A2], "Type", "Block A"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block B1", "Consumption", 'POWER CONSUMPTION'[Block B1], "Type", "Block B"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block B2", "Consumption", 'POWER CONSUMPTION'[Block B2], "Type", "Block B"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block B + All Ejector", "Consumption", 'POWER CONSUMPTION'[Block B + All Ejector], "Type", "Block B"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block B3(UT-04)", "Consumption", 'POWER CONSUMPTION'[Block B3(UT-04)], "Type", "Block B"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "UTILITY-05 (BLOCK B ANFD)", "Consumption", 'POWER CONSUMPTION'[UTILITY-05 (BLOCK B ANFD)], "Type", "Block B"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block C1", "Consumption", 'POWER CONSUMPTION'[Block C1], "Type", "Block C"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block D1", "Consumption", 'POWER CONSUMPTION'[Block D1], "Type", "Block D"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Block D2", "Consumption", 'POWER CONSUMPTION'[Block D2], "Type", "Block D"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "D-4", "Consumption", 'POWER CONSUMPTION'[D-4], "Type", "Block D"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "BOILER", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "BOILER (BOI-01)", "Consumption", 'POWER CONSUMPTION'[BOILER (BOI-01)], "Type", "BOILER"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "BOILER", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "BOILER (BOI-02)", "Consumption", 'POWER CONSUMPTION'[BOILER (BOI-02)], "Type", "BOILER"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-18", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "DG TOTAL", "Consumption", 'POWER CONSUMPTION'[DG TOTAL], "Type", "DG"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-22", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "MSEB E-22", "Consumption", 'POWER CONSUMPTION'[MSEB E-22], "Type", "E-22"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-17", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "ETP  (E.17)", "Consumption", 'POWER CONSUMPTION'[ETP  (E.17)], "Type", "ETP"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-17", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "MEE (E.17)", "Consumption", 'POWER CONSUMPTION'[MEE (E.17)], "Type", "MEE"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Stabilizer", "Consumption", 'POWER CONSUMPTION'[Stabilizer], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Admin", "Consumption", 'POWER CONSUMPTION'[Admin], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "UTILITY 2", "Consumption", 'Power Consumption'[UTILITY 2 ], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "UTILITY 3", "Consumption", 'POWER CONSUMPTION'[UTILITY 3], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "CT 75 HP (PUMP.2)", "Consumption", 'POWER CONSUMPTION'[CT 75 HP (PUMP.2)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Air Compressor (40HP)", "Consumption", 'POWER CONSUMPTION'[Air Compressor (40HP)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "TRANE-1(BRINE COMP 110TR)", "Consumption", 'POWER CONSUMPTION'[TRANE-1(BRINE COMP 110TR)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Chiller - 02 (Trane 2)", "Consumption", 'POWER CONSUMPTION'[Chiller - 02 (Trane 2)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Voltas Chiller-02", "Consumption", 'POWER CONSUMPTION'[Voltas Chiller-02], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "Air Compressor (20HP)", "Consumption", 'POWER CONSUMPTION'[Air Compressor (20HP)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "CT 75 HP (PUMP.1)", "Consumption", 'POWER CONSUMPTION'[CT 75 HP (PUMP.1)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "TF UNIT", "Consumption", 'POWER CONSUMPTION'[TF UNIT], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "E-17", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "PCC MAIN E-17", "Consumption", 'POWER CONSUMPTION'[PCC MAIN E-17], "Type", "E-17"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "NEW RO", "Consumption", 'POWER CONSUMPTION'[NEW RO], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "BRINE CHILLER (1/5F-30)", "Consumption", 'POWER CONSUMPTION'[BRINE CHILLER (1/5F-30)], "Type", "UTILITIES"),
+    SELECTCOLUMNS('POWER CONSUMPTION', "LocationType", "UTILITIES", "DocDate", 'POWER CONSUMPTION'[DocDate], "Doc No.", 'POWER CONSUMPTION'[Doc. No.], "Utility", "WATER CHILLER (2/4R-440)", "Consumption", 'Power Consumption'[WATER CHILLER (2/4R-440], "Type", "UTILITIES")
+)

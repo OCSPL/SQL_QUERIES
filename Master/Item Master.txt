@@ -1,0 +1,18 @@
+select i.sCode as [Eqmt ID],i.sName as [Eqmt Name],typ.sName as [Item Type]
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname ='Tag No') as [Tag No],
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname =''),
+--(select svalue from itmcf c where c.lid=i.lid and c.lline=0 and sname ='')
+
+from ITMMST i
+inner join ITMDET id on i.lId=id.lId 
+left join UNTMST u on id.lUntStk=u.lid
+join ITMTYP typ on  typ.lTypId=id.lTypId  where  id.lTypId in (57,60,61,62,66,76,77,80,81)

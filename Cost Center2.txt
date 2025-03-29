@@ -1,0 +1,6 @@
+with CTE as (select * from DIMMST d where cTyp IN ('C', 'P') and sCode in ('OCSV','OCCV','OCMV') )
+select 
+cc.sName as [Cost Center],
+dm.sName as [Sub Cost Center]
+from CTE cc
+join DIMMST dm on dm.lPrevId=cc.lId

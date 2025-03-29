@@ -1,0 +1,781 @@
+------------------------------------------------------------------------------
+
+-- (A) Setup: fromdate/todate, building #TXNTYP, #DIMMST, #ITMMST, etc.
+
+------------------------------------------------------------------------------
+
+ 
+
+DECLARE
+
+    @Fromdate INT,
+
+    @Todate   INT;
+
+ 
+
+SELECT @Fromdate = 20220101,
+
+       @Todate   = 20400106;
+
+ 
+
+-- 1) Put your initial data into temporary tables as before
+
+SELECT *
+
+INTO #TXNTYP
+
+FROM TXNTYP
+
+WHERE lStkTyp < 2;
+
+ 
+
+SELECT DISTINCT a.*, dt.bCompSel
+
+INTO #DIMMST
+
+FROM DIMMST AS a
+
+INNER JOIN DIMTYP AS dt
+
+    ON a.lTypId = dt.lTypId
+
+   AND a.cTyp   = 'S'
+
+WHERE a.bStkVal = 1;
+
+ 
+
+WITH vView AS
+
+(
+
+    SELECT
+
+        it.lTypId   AS lItmTyp,
+
+        it.sName    AS sItmTyp,
+
+        it.bStkSum,
+
+        it.lStkVal,
+
+        i.lId,
+
+        i.sCode,
+
+        i.sName,
+
+        id.lUntRpt,
+
+        id.dCnvRpt
+
+    FROM ITMMST  AS i
+
+    INNER JOIN ITMDET AS id
+
+        ON i.lId = id.lId
+
+       AND id.bStkUpd = 1
+
+       AND i.bDel     = 0
+
+    INNER JOIN ITMTYP AS it
+
+        ON id.lTypId = it.lTypId
+
+       AND it.bStkUpd = 1
+
+    INNER JOIN ITMTYPCMP AS x
+
+        ON it.lTypId = x.lTypId
+
+       AND x.lCompId = 27
+
+)
+
+SELECT
+
+    i.*
+
+INTO #ITMMST
+
+FROM vView AS i;
+
+ 
+
+-------------------------------------------------------------------------------
+
+-- 2) Build the vTxnDet CTE (exactly as in your code)
+
+-------------------------------------------------------------------------------
+
+WITH vTxnDet AS
+
+(
+
+    -- 2a) Opening where bStkSum=0
+
+    SELECT
+
+         -1               AS lDocTyp,
+
+         -1               AS lStkTyp,
+
+         0                AS lId,
+
+         @Fromdate        AS dtDocDate,
+
+         'OPN'            AS sDocNo,
+
+         0                AS lLine,
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         MAX(u.sFmt)      AS sFmt,
+
+         dd.lPrjId,
+
+         dd.lLocId,
+
+         dd.lStkBinId,
+
+         SUM(dd.dQtyStk)              AS dQtyStk,
+
+         SUM(COALESCE(dd.dStkVal,0))  AS dStkVal,
+
+         dd.lStkId,
+
+         dd.lStkLine,
+
+         MAX(dd.sValue1)  AS sValue1,
+
+         MAX(dd.sValue2)  AS sValue2,
+
+         MAX(dd.sValue3)  AS sValue3,
+
+         MAX(dd.sValue4)  AS sValue4,
+
+         MAX(dd.sValue5)  AS sValue5,
+
+         MAX(dd.sValue6)  AS sValue6,
+
+         MAX(dd.sValue7)  AS sValue7,
+
+         MAX(dd.sValue8)  AS sValue8
+
+    FROM #TXNTYP AS dt
+
+    INNER JOIN TXNHDR AS d
+
+        ON dt.lTypId = d.lTypId
+
+    INNER JOIN TXNDET AS dd
+
+        ON d.lId = dd.lId
+
+    INNER JOIN #ITMMST AS i
+
+        ON dd.lItmId  = i.lId
+
+       AND dd.lItmTyp = i.lItmTyp
+
+       AND i.bStkSum  = 0
+
+    INNER JOIN #DIMMST AS l
+
+        ON dd.lLocId  = l.lId
+
+    INNER JOIN UNTMST AS u
+
+        ON dd.lUntId2 = u.lId
+
+    WHERE d.bDel      = 0
+
+      AND dd.bDel     = 0
+
+      AND dd.cFlag   IN ('I','A')
+
+      AND dd.lClosed <= 0
+
+      AND (d.lCompId IN (27) OR l.bCompSel = -1)
+
+      AND d.dtDocDate < @Fromdate
+
+      AND d.lClosed <= 0
+
+    GROUP BY
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         dd.lPrjId,
+
+         dd.lLocId,
+
+         dd.lStkBinId,
+
+         dd.lStkId,
+
+         dd.lStkLine
+
+    HAVING NOT (SUM(dd.dQtyStk) BETWEEN -0.0001 AND 0.0001)
+
+ 
+
+    UNION ALL
+
+ 
+
+    -- 2b) Opening where bStkSum=1
+
+    SELECT
+
+         -1               AS lDocTyp,
+
+         -1               AS lStkTyp,
+
+         0                AS lId,
+
+         @Fromdate        AS dtDocDate,
+
+         'OPN'            AS sDocNo,
+
+         0                AS lLine,
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         MAX(u.sFmt)      AS sFmt,
+
+         dd.lPrjId,
+
+         dd.lLocId,
+
+         dd.lStkBinId,
+
+         FORMAT(SUM(dd.dQtyStk), MAX(u.sFmt))  AS dQtyStk,
+
+         ROUND(SUM(COALESCE(dd.dStkVal,0)),6)  AS dStkVal,
+
+         0                AS lStkId,
+
+         0                AS lStkLine,
+
+         MAX(dd.sValue1)  AS sValue1,
+
+         MAX(dd.sValue2)  AS sValue2,
+
+         MAX(dd.sValue3)  AS sValue3,
+
+         MAX(dd.sValue4)  AS sValue4,
+
+         MAX(dd.sValue5)  AS sValue5,
+
+         MAX(dd.sValue6)  AS sValue6,
+
+         MAX(dd.sValue7)  AS sValue7,
+
+         MAX(dd.sValue8)  AS sValue8
+
+    FROM #TXNTYP AS dt
+
+    INNER JOIN TXNHDR AS d
+
+        ON dt.lTypId = d.lTypId
+
+    INNER JOIN TXNDET AS dd
+
+        ON d.lId = dd.lId
+
+    INNER JOIN #ITMMST AS i
+
+        ON dd.lItmId  = i.lId
+
+       AND dd.lItmTyp = i.lItmTyp
+
+       AND i.bStkSum  = 1
+
+    INNER JOIN #DIMMST AS l
+
+        ON dd.lLocId  = l.lId
+
+    INNER JOIN UNTMST AS u
+
+        ON dd.lUntId2 = u.lId
+
+    WHERE d.bDel    = 0
+
+      AND dd.bDel   = 0
+
+      AND dd.cFlag IN ('I','A')
+
+      AND dd.lClosed <= 0
+
+      AND (d.lCompId IN (27) OR l.bCompSel = -1)
+
+      AND d.dtDocDate < @Fromdate
+
+      AND d.lClosed <= 0
+
+    GROUP BY
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         dd.lPrjId,
+
+         dd.lLocId,
+
+         dd.lStkBinId
+
+    HAVING NOT (SUM(dd.dQtyStk) BETWEEN -0.0001 AND 0.0001)
+
+ 
+
+    UNION ALL
+
+ 
+
+    -- 2c) Current (within @Fromdate and @Todate)
+
+    SELECT
+
+         dt.lTypId         AS lDocTyp,
+
+         dt.lStkTyp        AS lStkTyp,
+
+         d.lId             AS lId,
+
+         d.dtDocDate,
+
+         d.sDocNo          AS sDocNo,
+
+         dd.lLine,
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         u.sFmt            AS sFmt,
+
+         dd.lPrjId,
+
+         dd.lLocId,
+
+         dd.lStkBinId,
+
+         FORMAT(dd.dQtyStk, u.sFmt)       AS dQtyStk,
+
+         ROUND(COALESCE(dd.dStkVal,0),6)  AS dStkVal,
+
+         (CASE WHEN i.bStkSum=0 THEN dd.lStkId   ELSE 0 END) AS lStkId,
+
+         (CASE WHEN i.bStkSum=0 THEN dd.lStkLine ELSE 0 END) AS lStkLine,
+
+         dd.sValue1,
+
+         dd.sValue2,
+
+         dd.sValue3,
+
+         dd.sValue4,
+
+         dd.sValue5,
+
+         dd.sValue6,
+
+         dd.sValue7,
+
+         dd.sValue8
+
+    FROM #TXNTYP AS dt
+
+    INNER JOIN TXNHDR AS d
+
+        ON dt.lTypId = d.lTypId
+
+    INNER JOIN TXNDET AS dd
+
+        ON d.lId = dd.lId
+
+    INNER JOIN #ITMMST AS i
+
+        ON dd.lItmId  = i.lId
+
+       AND dd.lItmTyp = i.lItmTyp
+
+    INNER JOIN #DIMMST AS l
+
+        ON dd.lLocId  = l.lId
+
+    INNER JOIN UNTMST AS u
+
+        ON dd.lUntId2 = u.lId
+
+    WHERE d.bDel   = 0
+
+      AND dd.bDel  = 0
+
+      AND dd.cFlag IN ('I','A')
+
+      AND (d.lCompId IN (27) OR l.bCompSel = -1)
+
+      AND dd.lClosed <= 0
+
+      AND d.dtDocDate BETWEEN @Fromdate AND @Todate
+
+      AND d.lClosed <= 0
+
+)
+
+SELECT *
+
+INTO #vTxnDet
+
+FROM vTxnDet;
+
+ 
+
+-------------------------------------------------------------------------------
+
+-- (B) Put 'vCF' data into #vCF to avoid the 'Invalid object name vCF' error
+
+-------------------------------------------------------------------------------
+
+WITH vCF AS
+
+(
+
+    SELECT
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         -- Assuming lFieldNo=1 => Inventory Category, lFieldNo=2 => Subcategory
+
+         MAX(CASE WHEN icf.lFieldNo = 1 THEN icf.sValue ELSE '' END) AS mValue1,
+
+         MAX(CASE WHEN icf.lFieldNo = 2 THEN icf.sValue ELSE '' END) AS mValue2
+
+    FROM #vTxnDet dd
+
+    INNER JOIN ITMCF icf
+
+        ON dd.lItmTyp = icf.lTypId
+
+       AND dd.lItmId  = icf.lId
+
+    GROUP BY
+
+         dd.lItmTyp,
+
+         dd.lItmId
+
+)
+
+SELECT *
+
+INTO #vCF
+
+FROM vCF;
+
+ 
+
+--------------------------------------------------------------------------------
+
+-- 3) Aggregate View
+
+--------------------------------------------------------------------------------
+
+WITH vView AS
+
+(
+
+    SELECT
+
+         ROW_NUMBER() OVER (ORDER BY MAX(i.sItmTyp), MAX(i.sName), MAX(l.sName)) AS myRow,
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         dd.lLocId,
+
+         dd.lId,
+
+         dd.dtDocDate,
+
+ 
+
+         SUM(CASE WHEN dd.lStkTyp = -1 THEN dd.dQtyStk ELSE 0 END) AS dOpnQty,
+
+         SUM(CASE WHEN dd.lStkTyp = -1 THEN dd.dStkVal ELSE 0 END) AS dOpnVal,
+
+ 
+
+         SUM(CASE WHEN dd.lStkTyp = 0
+
+                   AND dd.dtDocDate >= @Fromdate
+
+                   AND dd.dtDocDate <= @Todate
+
+                  THEN dd.dQtyStk ELSE 0 END
+
+             ) AS dIncrQty,
+
+         SUM(CASE WHEN dd.lStkTyp = 0
+
+                   AND dd.dtDocDate >= @Fromdate
+
+                   AND dd.dtDocDate <= @Todate
+
+                  THEN dd.dStkVal ELSE 0 END
+
+             ) AS dIncrVal,
+
+ 
+
+         SUM(CASE WHEN dd.lStkTyp = 1
+
+                   AND dd.dtDocDate >= @Fromdate
+
+                   AND dd.dtDocDate <= @Todate
+
+                  THEN dd.dQtyStk ELSE 0 END
+
+             ) AS dDecrQty,
+
+         SUM(CASE WHEN dd.lStkTyp = 1
+
+                   AND dd.dtDocDate >= @Fromdate
+
+                   AND dd.dtDocDate <= @Todate
+
+                  THEN dd.dStkVal ELSE 0 END
+
+             ) AS dDecrVal,
+
+ 
+
+         SUM(dd.dQtyStk)         AS dClsQty,
+
+         SUM(dd.dStkVal)         AS dClsValue,
+
+         SUM(dd.dQtyStk)         AS dStkQty,
+
+         SUM(dd.dStkVal)         AS dStkVal,
+
+         MAX(i.dCnvRpt)          AS dCnvRpt
+
+    FROM #vTxnDet AS dd
+
+    INNER JOIN #DIMMST AS l
+
+        ON dd.lLocId = l.lId
+
+    INNER JOIN #ITMMST AS i
+
+        ON dd.lItmId  = i.lId
+
+       AND dd.lItmTyp = i.lItmTyp
+
+    INNER JOIN UNTMST AS u
+
+        ON dd.lUntId2 = u.lId
+
+    GROUP BY
+
+         dd.lItmTyp,
+
+         dd.lItmId,
+
+         dd.lUntId2,
+
+         dd.lLocId,
+
+         dd.lId,
+
+         dd.dtDocDate
+
+)
+
+SELECT DISTINCT a.*
+
+INTO #vStkVw
+
+FROM vView AS a;
+
+ 
+
+--------------------------------------------------------------------------------
+
+-- 4) Final SELECT with:
+
+--    - CONVERT(VARCHAR, dd.dtDocDate, 105) as [Date]
+
+--    - Inventory Category / Subcategory from #vCF
+
+--------------------------------------------------------------------------------
+
+SELECT
+
+     dd.myRow                      AS [Sr.No]
+
+   , it.lTypId                     AS [ItemTypeId]
+
+   , it.sName                      AS [ItemType]
+
+   , i.lId                         AS [ItemId]
+
+   , i.sCode                       AS [ItemCode]
+
+   , i.sName                       AS [ItemName]
+
+   , u.sCode                       AS [UOM]
+
+   , u.sFmt                        AS [sFmt]
+
+   , l.lId                         AS [LocationDetId]
+
+   , l.sName                       AS [Location]
+
+   , dd.lId
+
+ 
+
+   -- Convert dtDocDate to style 105 (dd-mm-yyyy)
+
+   , CONVERT(VARCHAR, dd.dtDocDate, 105) AS [Date]
+
+ 
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dOpnQty,0))) AS [Opening Quantity]
+
+   , CASE WHEN dd.dOpnQty = 0 THEN 0
+
+          ELSE dd.dOpnVal / dd.dOpnQty
+
+     END AS [Opening Rate]
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dOpnVal,0))) AS [Opening Value]
+
+ 
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dIncrQty,0))) AS [Increase Quantity]
+
+   , CASE WHEN dd.dIncrQty = 0 THEN 0
+
+          ELSE dd.dIncrVal / dd.dIncrQty
+
+     END AS [Increase Rate]
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dIncrVal,0))) AS [Increase Value]
+
+ 
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dDecrQty,0))) AS [Decrease Quantity]
+
+   , CASE WHEN dd.dDecrQty = 0 THEN 0
+
+          ELSE dd.dDecrVal / dd.dDecrQty
+
+     END AS [Decrease Rate]
+
+   , CONVERT(NVARCHAR(50), CONVERT(DECIMAL(21,3), COALESCE(dd.dDecrVal,0))) AS [Decrease Value]
+
+ 
+
+   , CAST(dd.dClsQty AS DECIMAL(21,3)) AS [Closing Quantity]
+
+   , CASE WHEN CAST(dd.dClsQty AS DECIMAL(21,3)) > 0
+
+          THEN CAST(dd.dClsValue AS DECIMAL(21,3))
+
+               / CAST(dd.dClsQty AS DECIMAL(21,3))
+
+          ELSE 0
+
+     END AS [Closing Rate]
+
+   , CAST(dd.dClsValue AS DECIMAL(21,3)) AS [Closing Value]
+
+ 
+
+   -- Inventory Category & Subcategory from #vCF
+
+   , cf.mValue1 AS [Inventory Category]
+
+   , cf.mValue2 AS [Inventory Subcategory]
+
+ 
+
+FROM #vStkVw AS dd
+
+INNER JOIN ITMTYP  AS it
+
+    ON dd.lItmTyp = it.lTypId
+
+INNER JOIN #ITMMST AS i
+
+    ON dd.lItmId  = i.lId
+
+   AND dd.lItmTyp = i.lItmTyp
+
+INNER JOIN UNTMST  AS u
+
+    ON dd.lUntId2 = u.lId
+
+INNER JOIN #DIMMST AS l
+
+    ON dd.lLocId  = l.lId
+
+ 
+
+-- Join to the #vCF temp table for Category/Subcategory
+
+LEFT JOIN #vCF AS cf
+
+    ON dd.lItmTyp = cf.lItmTyp
+
+   AND dd.lItmId  = cf.lItmId;
+
+ 
+
+--------------------------------------------------------------------------------
+
+-- 5) Drop temporary tables
+
+--------------------------------------------------------------------------------
+
+DROP TABLE #ITMMST,
+
+           #DIMMST,
+
+           #TXNTYP,
+
+           #vStkVw,
+
+           #vTxnDet,
+
+           #vCF;

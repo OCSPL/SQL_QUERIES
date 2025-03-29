@@ -1,0 +1,423 @@
+DECLARE 
+    @CompanyID       INT,
+    @FromDate        DATETIME,
+    @ToDate          DATETIME,
+    @FGProductName   NVARCHAR(500) = NULL,  -- <-- Filter parameter for FG Name
+    @OutBatchNo      NVARCHAR(50)  = NULL   -- <-- Filter parameter for Output Batch No
+;
+
+SET @CompanyID = 27;
+SET @FromDate  = '2023-04-01';
+SET @ToDate    = GETDATE();
+
+BEGIN
+    ------------------------------------------------------------------------------  
+    -- 1) Temporary master table to hold TxnHdr IDs  
+    ------------------------------------------------------------------------------  
+    CREATE TABLE #Temp_ProdEntryMaster
+    (
+        Id  INT IDENTITY(1,1),
+        lid INT
+    );
+
+    ------------------------------------------------------------------------------  
+    -- 2) Temporary table to hold the final Output/Consumption/BiProduct details  
+    ------------------------------------------------------------------------------  
+    CREATE TABLE #Temp_ProdOutputTable
+    (
+        Id                     INT IDENTITY(1,1),
+        lid                    INT,
+        Output_Voucher_No      NVARCHAR(50),
+        Output_Voucher_Date    NVARCHAR(50),
+        Output_Item_Code       NVARCHAR(50),
+        Output_Item_Name       NVARCHAR(500),
+        Output_Item_Type       NVARCHAR(500),
+        FG_Name                NVARCHAR(500),
+        Output_Batch_No        NVARCHAR(50),
+        Output_Purity          NVARCHAR(50),
+        Output_Recovery        NVARCHAR(50),
+        Output_UOM             NVARCHAR(50),
+        Output_BOMname         NVARCHAR(100),
+        Output_BomQty          DECIMAL(18,3),
+        Output_Quantity        DECIMAL(18,3),
+        Output_Rate            DECIMAL(18,2),
+        Output_Value           DECIMAL(18,2),
+
+        BiProduct_lid          INT,
+        BiProduct_Voucher_No   NVARCHAR(50),
+        BiProduct_Voucher_Date NVARCHAR(50),
+        BiProduct_Item_Code    NVARCHAR(50),
+        BiProduct_Item_Name    NVARCHAR(500),
+        BiProduct_Batch_No     NVARCHAR(50),
+        BiProduct_Purity       NVARCHAR(50),
+        BiProduct_Recovery     NVARCHAR(50),
+        BiProduct_UOM          NVARCHAR(50),
+        BiProduct_Quantity     DECIMAL(18,3),
+        BiProduct_Rate         DECIMAL(18,2),
+        BiProduct_Value        DECIMAL(18,2),
+
+        Consume_lid            INT,
+        MyRow                  INT,
+        Consume_Voucher_No     NVARCHAR(50),
+        Consume_Voucher_Date   NVARCHAR(50),
+        Consume_Item_Type      NVARCHAR(50),
+        Consume_Item_Code      NVARCHAR(50),
+        Consume_Item_Name      NVARCHAR(500),
+        Consume_Batch_No       NVARCHAR(50),
+        Consume_UOM            NVARCHAR(50),
+        Std_Qty                DECIMAL(30,2),
+        Consume_Quantity       DECIMAL(18,3),
+        Consume_Rate           DECIMAL(18,2),
+        Consume_Value          DECIMAL(18,2)
+    );
+
+    ------------------------------------------------------------------------------
+    -- 3) Insert Production Header IDs into #Temp_ProdEntryMaster
+    ------------------------------------------------------------------------------
+    INSERT INTO #Temp_ProdEntryMaster (lid)
+    SELECT 
+        HDR.lid
+    FROM txnhdr HDR
+    WHERE HDR.ltypid IN (597, 924, 913, 925, 899, 891)
+      AND HDR.lcompid = @CompanyID
+      -- Safely convert dtDocDate (INT) into DATE for filtering
+      AND CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate), 112) BETWEEN @FromDate AND @ToDate
+      AND HDR.bDel = 0;
+
+    DECLARE @Cnt    INT = 1,
+            @MaxCnt INT = (SELECT MAX(Id) FROM #Temp_ProdEntryMaster);
+
+    ------------------------------------------------------------------------------
+    -- 4) Loop over each Production Master record to gather Output/BiProduct/Consumption
+    ------------------------------------------------------------------------------
+    WHILE (@Cnt <= @MaxCnt)
+    BEGIN
+        ------------------------------------------------------------------------------
+        -- 4a) Production Output lines (FG Output)
+        ------------------------------------------------------------------------------
+        INSERT INTO #Temp_ProdOutputTable
+        (
+            lid,
+            Output_Voucher_No,
+            Output_Voucher_Date,
+            Output_Item_Code,
+            Output_Item_Name,
+            Output_Item_Type,
+            FG_Name,
+            Output_Batch_No,
+            Output_Purity,
+            Output_Recovery,
+            Output_UOM,
+            Output_BOMname,
+            Output_BomQty,
+            Output_Quantity,
+            Output_Rate,
+            Output_Value
+        )
+        SELECT
+            HDR.lid,
+            HDR.sDocNo AS Output_Voucher_No,
+            CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate), 112), 106) AS Output_Voucher_Date,
+            ITM.sCode  AS Output_Item_Code,
+            ITM.sName  AS Output_Item_Name,
+            ITP.sName  AS Output_Item_Type,
+            ITMCF.sValue AS FG_Name,
+            DET.sValue1 AS Output_Batch_No,
+            DET.sValue6 AS Output_Purity,
+            DET.sValue7 AS Output_Recovery,
+            UOM.sCode   AS Output_UOM,
+            IB.sName    AS Output_BOMname,
+            CONVERT(DECIMAL(18,3), IB.dQty)   AS Output_BomQty,
+            CONVERT(DECIMAL(18,3), DET.dQty2) AS Output_Quantity,
+            CASE WHEN DET.dQty2 <> 0 
+                 THEN CONVERT(DECIMAL(18,3), DET.dStkVal / DET.dQty2)
+                 ELSE 0 
+            END AS Output_Rate,
+            CONVERT(DECIMAL(18,3), DET.dStkVal) AS Output_Value
+        FROM txnhdr HDR
+        INNER JOIN TXNDET  AS DET   ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+        INNER JOIN ITMMST  AS ITM   ON DET.lItmId = ITM.lId
+        INNER JOIN ITMCF   AS ITMCF ON DET.lItmId = ITMCF.lId AND ITMCF.lFieldNo = 10 AND ITMCF.lLine = 0
+        INNER JOIN ITMTYP  AS ITP   ON ITP.lTypid = DET.lItmTyp
+        INNER JOIN UNTMST  AS UOM   ON DET.lUntId = UOM.lId
+        LEFT  JOIN ITMBOM  AS IB    ON DET.lBomId = IB.lBomId
+        WHERE HDR.ltypid IN (597, 924, 913, 925, 899, 891)
+          AND HDR.lid = (SELECT lid FROM #Temp_ProdEntryMaster WHERE Id = @Cnt)
+          AND HDR.lcompid = @CompanyID
+          AND HDR.bDel    = 0;
+
+        ------------------------------------------------------------------------------
+        -- 4b) Fetch core “Output” fields to reuse for BiProduct & Consumption
+        ------------------------------------------------------------------------------
+        DECLARE 
+            @Output_Voucher_no   VARCHAR(500),
+            @Output_Voucher_Date VARCHAR(100),
+            @Output_Item_Code    VARCHAR(500),
+            @Output_Item_Name    VARCHAR(500),
+            @FG_Name             VARCHAR(500),
+            @Output_Batch_NO     VARCHAR(500),
+            @Output_BOMname      VARCHAR(500),
+            @Output_BomQty       DECIMAL(21,3),
+            @Output_Qty          DECIMAL(21,3);
+
+        SELECT 
+            @Output_Voucher_no   = d.sDocNo,
+            @Output_Voucher_Date = CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), d.dtDocDate), 112), 105),
+            @Output_Item_Code    = itm.sCode,
+            @Output_Item_Name    = itm.sName,
+            @FG_Name             = ITMCF.sValue,
+            @Output_Batch_NO     = dd.sValue1,
+            -- If you need BOM name or qty from a specific reference, set them here:
+            -- @Output_BOMname   = SomeColumnFrom dd or another table
+            -- @Output_BomQty    = SomeQtyColumnFrom dd or another table
+            @Output_Qty          = CONVERT(DECIMAL(18,3), dd.dQty2)
+        FROM txnhdr d
+        INNER JOIN TXNDET dd ON d.lId = dd.lId AND dd.cFlag = 'I'
+        INNER JOIN ITMMST itm ON dd.lItmId = itm.lId
+        INNER JOIN ITMCF ON dd.lItmId = ITMCF.lId AND ITMCF.lFieldNo = 10 AND ITMCF.lLine = 0
+        WHERE d.ltypid IN (597, 924, 913, 925, 899, 891)
+          AND d.lid    = (SELECT lid FROM #Temp_ProdEntryMaster WHERE Id = @Cnt);
+
+        ------------------------------------------------------------------------------
+        -- 4c) Insert Bi-Product details
+        ------------------------------------------------------------------------------
+        INSERT INTO #Temp_ProdOutputTable
+        (
+            Output_Voucher_No,
+            Output_Voucher_Date,
+            Output_Item_Code,
+            Output_BOMname,
+            Output_BomQty,
+            Output_Quantity,
+            Output_Item_Name,
+            FG_Name,
+            Output_Batch_No,
+
+            lid,
+            BiProduct_lid,
+            BiProduct_Voucher_No,
+            BiProduct_Voucher_Date,
+            BiProduct_Item_Code,
+            BiProduct_Item_Name,
+            BiProduct_Batch_No,
+            BiProduct_Purity,
+            BiProduct_Recovery,
+            BiProduct_UOM,
+            BiProduct_Quantity,
+            BiProduct_Rate,
+            BiProduct_Value
+        )
+        SELECT
+            @Output_Voucher_no,
+            @Output_Voucher_Date,
+            @Output_Item_Code,
+            @Output_BOMname,
+            @Output_BomQty,
+            @Output_Qty,
+            @Output_Item_Name,
+            @FG_Name,
+            @Output_Batch_NO,
+
+            DET.lLnkDocId             AS lid,
+            HDR.lid                   AS BiProduct_lid,
+            HDR.sDocNo                AS BiProduct_Voucher_No,
+            CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate), 112), 106) AS BiProduct_Voucher_Date,
+            ITM.sCode                 AS BiProduct_Item_Code,
+            ITM.sName                 AS BiProduct_Item_Name,
+            DET.sValue1               AS BiProduct_Batch_No,
+            DET.sValue6               AS BiProduct_Purity,
+            DET.sValue7               AS BiProduct_Recovery,
+            UOM.sCode                 AS BiProduct_UOM,
+            CONVERT(DECIMAL(18,3), DET.dQty2) AS BiProduct_Quantity,
+            CASE WHEN DET.dQty2 <> 0 
+                 THEN CONVERT(DECIMAL(18,3), DET.dStkVal / DET.dQty2)
+                 ELSE 0 
+            END AS BiProduct_Rate,
+            CONVERT(DECIMAL(18,3), DET.dStkVal) AS BiProduct_Value
+        FROM txnhdr HDR
+        INNER JOIN TXNDET AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+        INNER JOIN ITMMST AS ITM ON DET.lItmId = ITM.lId
+        INNER JOIN ITMTYP AS ITP ON ITP.lTypid = DET.lItmTyp
+        INNER JOIN UNTMST AS UOM ON DET.lUntId = UOM.lId
+        WHERE HDR.ltypid IN (599,893,912,915,928,929,1059,1060,1061,1062,1063,1064)
+          AND DET.lLnkDocId = (SELECT lid FROM #Temp_ProdEntryMaster WHERE Id = @Cnt)
+          AND HDR.lcompid   = @CompanyID
+          AND HDR.bDel      = 0;
+
+        ------------------------------------------------------------------------------
+        -- 4d) Insert Consumption details (stagewise consumption)
+        ------------------------------------------------------------------------------
+        INSERT INTO #Temp_ProdOutputTable
+        (
+            Output_Voucher_No,
+            Output_Voucher_Date,
+            Output_Item_Code,
+            Output_BOMname,
+            Output_BomQty,
+            Output_Quantity,
+            Output_Item_Name,
+            FG_Name,
+            Output_Batch_No,
+
+            lid,
+            Consume_lid,
+            Consume_Voucher_No,
+            Consume_Voucher_Date,
+            Consume_Item_Type,
+            Consume_Item_Code,
+            Consume_Item_Name,
+            Consume_Batch_No,
+            Consume_UOM,
+            Std_Qty,
+            Consume_Quantity,
+            Consume_Rate,
+            Consume_Value,
+            MyRow
+        )
+        SELECT
+            @Output_Voucher_no,
+            @Output_Voucher_Date,
+            @Output_Item_Code,
+            @Output_BOMname,
+            @Output_BomQty,
+            @Output_Qty,
+            @Output_Item_Name,
+            @FG_Name,
+            @Output_Batch_NO,
+
+            DET.lLnkDocId AS lid,
+            HDR.lid       AS Consume_lid,
+            HDR.sDocNo    AS Consume_Voucher_No,
+            CONVERT(VARCHAR, CONVERT(DATE, CONVERT(VARCHAR(8), HDR.dtDocDate), 112), 106) AS Consume_Voucher_Date,
+            ITP.sName     AS Consume_Item_Type,
+            ITM.sCode     AS Consume_Item_Code,
+            ITM.sName     AS Consume_Item_Name,
+            DET.sValue1   AS Consume_Batch_No,
+            UOM.sCode     AS Consume_UOM,
+            (
+                SELECT 
+                    SUM(
+                        CASE WHEN ISNUMERIC(c.sValue) = 1
+                             THEN CONVERT(DECIMAL(30,2), c.sValue)
+                             ELSE 0.00
+                        END
+                    )
+                FROM TXNDET d
+                INNER JOIN TXNCF c 
+                    ON d.lId   = c.lId
+                   AND d.lLine = c.lLine
+                   AND c.lFieldNo = 1
+                WHERE d.lId   = DET.lLnkDocId
+                  AND d.lLine = DET.lLnkLine
+                  AND d.cFlag = 'B'
+            ) AS Std_Qty,
+            CONVERT(DECIMAL(18,3), DET.dQty2) AS Consume_Quantity,
+            CASE WHEN DET.dQty2 <> 0 
+                 THEN CONVERT(DECIMAL(18,3), (DET.dStkVal * -1) / DET.dQty2)
+                 ELSE 0 
+            END AS Consume_Rate,
+            CONVERT(DECIMAL(18,3), DET.dStkVal * -1) AS Consume_Value,
+            ROW_NUMBER() OVER (PARTITION BY HDR.lId, DET.lItmId 
+                               ORDER BY HDR.lId, DET.lItmId) AS MyRow
+        FROM txnhdr HDR
+        INNER JOIN TXNDET  AS DET ON HDR.lId = DET.lId AND DET.cFlag = 'I'
+        INNER JOIN ITMMST  AS ITM ON DET.lItmId = ITM.lId
+        INNER JOIN ITMTYP  AS ITP ON ITP.lTypid = DET.lItmTyp
+        INNER JOIN UNTMST  AS UOM ON DET.lUntId = UOM.lId
+        WHERE HDR.ltypid IN (598,892,911,914,926,927)
+          AND DET.bDel    <> -2
+          AND HDR.bDel    <>  1
+          AND DET.lClosed <> -2
+          AND HDR.lClosed = 0
+          AND DET.lLnkDocId = (SELECT lid FROM #Temp_ProdEntryMaster WHERE Id = @Cnt)
+          AND HDR.lcompid   = @CompanyID
+          AND HDR.bDel      = 0;
+
+        SET @Cnt = @Cnt + 1;
+    END; -- WHILE loop ends
+
+    ------------------------------------------------------------------------------
+    -- 5) Adjust Std_Qty proportionally so each consumption line has correct standard usage
+    ------------------------------------------------------------------------------
+    UPDATE d
+    SET d.Std_Qty = CONVERT(DECIMAL(30,3),
+                    (d.Std_Qty * d.Consume_Quantity) /
+                    CASE WHEN x.Consume_Quantity = 0 THEN 1 
+                         ELSE x.Consume_Quantity END
+                  )
+    FROM #Temp_ProdOutputTable d
+    INNER JOIN 
+    (
+        SELECT 
+            Consume_lid, 
+            Consume_Item_Code,
+            SUM(Consume_Quantity) AS Consume_Quantity
+        FROM #Temp_ProdOutputTable
+        GROUP BY Consume_lid, Consume_Item_Code
+    ) x 
+        ON d.Consume_lid       = x.Consume_lid
+       AND d.Consume_Item_Code = x.Consume_Item_Code
+    WHERE d.Consume_lid > 0 
+      AND d.Std_Qty > 0;
+
+    ------------------------------------------------------------------------------
+    -- 5b) Zero out repeated Output_Quantity for repeated lines of the same item
+    --     so the Output Quantity won't appear multiple times.
+    ------------------------------------------------------------------------------
+    ;WITH cte AS
+    (
+        SELECT 
+            Id,
+            Output_Voucher_No,
+            Output_Item_Code,
+            ROW_NUMBER() OVER (PARTITION BY Output_Voucher_No, Output_Item_Code
+                               ORDER BY Id) AS rn
+        FROM #Temp_ProdOutputTable
+    )
+    UPDATE T
+    SET T.Output_Quantity = 0
+    FROM #Temp_ProdOutputTable AS T
+    INNER JOIN cte ON T.Id = cte.Id
+    WHERE cte.rn > 1;
+
+    ------------------------------------------------------------------------------
+    -- If you do NOT want repeated rows for multiple consumption lines for the same item,
+    -- you can zero out the Std_Qty on MyRow>1 as well, depending on your business rules:
+    -- UPDATE #Temp_ProdOutputTable
+    -- SET Std_Qty = 0
+    -- WHERE MyRow > 1;
+
+    ------------------------------------------------------------------------------
+    -- 6) Remove columns we no longer need (lid, MyRow) if you wish
+    ------------------------------------------------------------------------------
+    ALTER TABLE #Temp_ProdOutputTable 
+        DROP COLUMN lId;
+    ALTER TABLE #Temp_ProdOutputTable 
+        DROP COLUMN MyRow;
+
+    ------------------------------------------------------------------------------
+    -- 7) Return all data, including VariationQty = (Consume_Quantity - Std_Qty),
+    --    with optional filters on FG_Name and Output_Batch_No.
+    --    NOTE: We also added an extra filter to show only lines where the FG_Name = '3-CHLORO-2-HYDRAZINE PYRIDINE'
+    --    and the "Output_Voucher_Date" is between 01-04-2024 and 30-04-2024.
+    ------------------------------------------------------------------------------
+    SELECT
+        *,
+        (Consume_Quantity - Std_Qty) AS VariationQty
+    FROM #Temp_ProdOutputTable
+    WHERE 
+        (@FGProductName IS NULL 
+         OR FG_Name LIKE '%' + @FGProductName + '%')
+      AND (@OutBatchNo IS NULL 
+         OR Output_Batch_No LIKE '%' + @OutBatchNo + '%')
+      --AND FG_Name = '3-CHLORO-2-HYDRAZINE PYRIDINE'
+      --AND Output_Voucher_Date >= '01 Apr 2024'  -- or style '01-04-2024'
+      --AND Output_Voucher_Date <= '30 Apr 2024'  -- or style '30-04-2024'
+    ORDER BY Id;
+
+    ------------------------------------------------------------------------------
+    -- 8) Clean up temp tables
+    ------------------------------------------------------------------------------
+    DROP TABLE #Temp_ProdEntryMaster;
+    DROP TABLE #Temp_ProdOutputTable;
+END;
